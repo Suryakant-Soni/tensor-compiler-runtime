@@ -1,0 +1,59 @@
+tensor-compiler-runtime/
+│
+├── CMakeLists.txt
+├── README.md
+├── .clang-format
+├── .clang-tidy
+├── .gitignore
+│
+├── cmake/
+│   ├── CompilerWarnings.cmake
+│   ├── Sanitizers.cmake
+│   └── Coverage.cmake             # add this
+│
+├── include/
+│   └── tcr/
+│       ├── ir/
+│       │   ├── ids.hpp
+│       │   ├── dtype.hpp
+│       │   ├── shape.hpp
+│       │   ├── value.hpp
+│       │   ├── op.hpp
+│       │   ├── node.hpp
+│       │   ├── graph.hpp
+│       │   ├── verify.hpp
+│       │   └── print.hpp
+│       │
+│       └── reference/
+│           ├── tensor.hpp
+│           ├── bindings.hpp
+│           └── interpreter.hpp
+│
+├── src/
+│   ├── ir/
+│   │   ├── graph.cpp
+│   │   ├── shape.cpp
+│   │   ├── verify.cpp
+│   │   └── print.cpp
+│   │
+│   └── reference/
+│       ├── tensor.cpp
+│       └── interpreter.cpp
+│
+├── tests/
+│   ├── CMakeLists.txt
+│   │
+│   ├── ir/
+│   │   ├── test_ir_types.cpp       # ids/dtype/op/value/node basics
+│   │   ├── test_shape.cpp
+│   │   ├── test_graph.cpp
+│   │   ├── test_verify.cpp
+│   │   └── test_print.cpp
+│   │
+│   └── reference/
+│       ├── test_tensor.cpp
+│       ├── test_bindings.cpp
+│       └── test_interpreter.cpp
+│
+└── apps/
+    └── tcr_cli.cpp
