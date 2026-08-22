@@ -1,0 +1,49 @@
+cmake_minimum_required(VERSION 3.18)
+project(tensor-compiler-runtime LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# ------------------------------------------------------------
+# Catch2
+# ------------------------------------------------------------
+include(FetchContent)
+
+FetchContent_Declare(
+    Catch2
+    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+    GIT_TAG v3.8.1
+)
+
+FetchContent_MakeAvailable(Catch2)
+
+# ------------------------------------------------------------
+# Main TCR library
+# ------------------------------------------------------------
+add_library(tcr STATIC src/ir/graph.cpp)
+
+# add headers to the main code lib
+target_include_directories(tcr PUBLIC
+        ${PROJECT_SOURCE_DIR}/include)       
+
+
+# ------------------------------------------------------------
+# Tests
+# ------------------------------------------------------------
+add_executable(tcr_tests tests/ir/test_types.cpp)
+
+target_link_libraries(tcr_tests
+PRIVATE 
+tcr
+Catch2::Catch2WithMain)
+
+# ------------------------------------------------------------
+# Ctest integration
+# ------------------------------------------------------------
+# turn on Ctest for this project
+enable_testing()
+# load Catch2 Cmake helpers
+include(Catch)
+#Register all TEST_CASEs from tct_tests with Ctest(Cmake's test runner)
+catch_discover_tests(tcr_tests)
