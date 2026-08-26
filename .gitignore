@@ -1,1 +1,4 @@
 /build
+.cache/clangd/
+.cache/clangd/index/ids.hpp.34601590019310EA.idx
+.cache/clangd/index/test_types.cpp.DABFCFAE7C6F31AB.idx

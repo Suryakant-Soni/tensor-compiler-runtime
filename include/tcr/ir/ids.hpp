@@ -1,3 +1,4 @@
+#pragma once
 // documents the id type given to nodes and tensor-input/output values
 #include <cstdint>
 #include <ostream>

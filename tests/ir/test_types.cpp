@@ -1,5 +1,5 @@
 #include "tcr/ir/ids.hpp"
-#include <cassert>
+#include <catch2/catch_test_macros.hpp>
 
 using namespace tcr::ir;
 

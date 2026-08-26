@@ -1,4 +1,5 @@
 // documents the data type of elements of the inputs and outputs of these tensors
+#pragma once
 #include <cstddef>
 #include <string_view>
 namespace tcr::ir {

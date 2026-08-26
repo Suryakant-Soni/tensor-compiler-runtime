@@ -21,12 +21,16 @@ FetchContent_MakeAvailable(Catch2)
 # ------------------------------------------------------------
 # Main TCR library
 # ------------------------------------------------------------
-add_library(tcr STATIC src/ir/graph.cpp)
+add_library(tcr STATIC
+    src/ir/shape.cpp
+    src/ir/dtype.cpp
+    src/ir/graph.cpp
+    src/ir/op.cpp
+)
 
 # add headers to the main code lib
 target_include_directories(tcr PUBLIC
         ${PROJECT_SOURCE_DIR}/include)       
-
 
 # ------------------------------------------------------------
 # Tests
