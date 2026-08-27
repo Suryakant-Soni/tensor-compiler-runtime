@@ -4,6 +4,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+add_compile_options(--coverage -O0 -g)
+add_link_options(--coverage)
 
 # ------------------------------------------------------------
 # Catch2
@@ -35,7 +37,8 @@ target_include_directories(tcr PUBLIC
 # ------------------------------------------------------------
 # Tests
 # ------------------------------------------------------------
-add_executable(tcr_tests tests/ir/test_types.cpp)
+add_executable(tcr_tests tests/ir/test_types.cpp
+                         tests/ir/test_graph.cpp)
 
 target_link_libraries(tcr_tests
 PRIVATE 
