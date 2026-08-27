@@ -1,5 +1,6 @@
 #pragma once
 #include "tcr/ir/dtype.hpp"
+#include "tcr/ir/ids.hpp"
 #include "tcr/ir/nodes.hpp"
 #include "tcr/ir/shape.hpp"
 #include "tcr/ir/value.hpp"
@@ -19,16 +20,19 @@ public:
 
   // mark final output for graph result
   void set_outputs(std::vector<ValueId> outputs);
+  void add_output(ValueId id);
 
   // read graph contents
   const Value &value(ValueId id) const;
   const Node &node(NodeId id) const;
 
-  const std::vector<ValueId> inputs() const;
-  const std::vector<ValueId> outputs() const;
+  const std::vector<ValueId>& inputs() const;
+  const std::vector<ValueId>& outputs() const;
 
   // private attributes
 private:
+  // validate value id
+  void validate_value_id(ValueId id) const;
   std::vector<Value> values_;
   std::vector<Node> nodes_;
 

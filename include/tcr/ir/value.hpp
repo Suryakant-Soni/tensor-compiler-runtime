@@ -5,8 +5,8 @@
 namespace tcr::ir {
 
 struct Value {
-  tcr::ir::Shape  shape;
-  tcr::ir::Dtype dtype;
-  std::optional<tcr::ir::NodeId> producer;
+  Shape  shape;
+  Dtype dtype;
+  std::optional<NodeId> producer;
 };
 }
