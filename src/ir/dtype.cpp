@@ -3,11 +3,13 @@
 
 namespace tcr::ir {
 
-std::string_view to_string(Dtype dt) {
-  switch (dt) {
+std::string_view to_string(Dtype dtype) {
+  switch (dtype) {
   case Dtype::F32:
-    return "F32";
+    return "f32";
   }
+
+  throw std::invalid_argument("unknown dtype");
 }
 
 std::size_t size_in_bytes(Dtype dt) {
