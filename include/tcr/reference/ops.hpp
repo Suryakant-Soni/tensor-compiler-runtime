@@ -30,7 +30,7 @@ Tensor elementwise_binary(const Tensor &lhs, const Tensor &rhs, F fn) {
   std::vector<float> out(a.size());
 
   for (std::size_t i = 0; i < a.size(); i++) {
-    out[i] = F(a[i], b[i]);
+    out[i] = fn(a[i], b[i]);
   }
   return Tensor{
       lhs.shape(),

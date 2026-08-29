@@ -6,7 +6,6 @@
 
 using namespace tcr::ir;
 #include "tcr/ir/graph.hpp"
-#include <catch2/catch_test_macros.hpp>
 
 using namespace tcr::ir;
 

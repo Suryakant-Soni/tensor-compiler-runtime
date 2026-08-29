@@ -31,6 +31,7 @@ add_library(tcr STATIC
     src/reference/tensor.cpp
     src/reference/bindings.cpp
     src/reference/interpreter.cpp
+    src/reference/ops.cpp
 )
 
 # add headers to the main code lib
@@ -42,7 +43,12 @@ target_include_directories(tcr PUBLIC
 # ------------------------------------------------------------
 add_executable(tcr_tests tests/ir/test_types.cpp
                          tests/ir/test_graph.cpp
-                         tests/ir/test_shape.cpp)
+                         tests/ir/test_shape.cpp
+                         tests/reference/test_interpreter.cpp
+                         tests/reference/test_ops.cpp
+                         tests/reference/test_bindings.cpp
+                         tests/reference/test_tensor.cpp
+                         )
 
 target_link_libraries(tcr_tests
 PRIVATE 
