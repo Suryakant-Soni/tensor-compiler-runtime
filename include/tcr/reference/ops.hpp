@@ -2,6 +2,7 @@
 
 #include "tcr/reference/tensor.hpp"
 #include <cstddef>
+#include <stdexcept>
 #include <vector>
 namespace tcr::reference {
 

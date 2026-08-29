@@ -43,8 +43,6 @@ Tensor Interpreter::eval(const Graph &graph, ValueId output_id,
                   eval(graph, node.inputs[1], inputs));
   case ir::Op::Input:
     throw std::logic_error("input should not have any producer");
-  case ir::Op::Constant:
-    throw std::logic_error("constant evaluation is not implemented yet");
   }
   throw std::logic_error("unknown operation");
 }

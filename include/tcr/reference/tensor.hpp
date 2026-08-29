@@ -19,7 +19,6 @@ public:
 
   //constness overloading/redeclaration for fetching data_
   const std::vector<float>& data() const;
-  std::vector<float>& data();
 
 private:
   Shape shape_;

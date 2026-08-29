@@ -3,7 +3,6 @@
 namespace tcr::ir {
 enum class Op {
   Input,
-  Constant,
   Add,
   Mul,
   Sum,

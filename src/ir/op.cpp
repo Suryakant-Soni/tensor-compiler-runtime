@@ -9,8 +9,6 @@ std::string_view to_string(Op operation) {
     return "Input";
   case Op::Add:
     return "Add";
-  case Op::Constant:
-    return "Constant";
   case Op::Mul:
     return "Mul";
   case Op::MatMul:

@@ -1,4 +1,5 @@
 #include "tcr/ir/dtype.hpp"
+#include <stdexcept>
 #include <string_view>
 
 namespace tcr::ir {

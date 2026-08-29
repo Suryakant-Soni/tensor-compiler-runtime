@@ -1,13 +1,14 @@
 #include "tcr/reference/tensor.hpp"
 #include "tcr/ir/dtype.hpp"
 #include "tcr/ir/shape.hpp"
+#include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace tcr::reference {
 
 using tcr::ir::Dtype;
 using tcr::ir::Shape;
-using tcr::reference::Tensor;
 
 Tensor::Tensor(Shape shape, Dtype dtype, std::vector<float> data)
     : shape_(std::move(shape)), dtype_(dtype), data_(std::move(data)) {
@@ -19,5 +20,4 @@ Tensor::Tensor(Shape shape, Dtype dtype, std::vector<float> data)
 const Shape &Tensor::shape() const { return shape_; }
 Dtype Tensor::dtype() const { return dtype_; }
 const std::vector<float> &Tensor::data() const { return data_; }
-std::vector<float> &Tensor::data() { return data_; }
 } // namespace tcr::reference
