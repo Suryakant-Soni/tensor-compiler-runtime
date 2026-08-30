@@ -17,7 +17,7 @@ moved to those slotids
 namespace tcr::runtime {
 
 struct Instructions {
-  Opcode opcode;
+      Opcode opcode;
   std::vector<SlotId> inputs;
   SlotId output_slot_id;
 };
