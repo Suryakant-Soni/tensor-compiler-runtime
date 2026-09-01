@@ -4,6 +4,7 @@
 #include "tcr/ir/nodes.hpp"
 #include "tcr/ir/shape.hpp"
 #include "tcr/ir/value.hpp"
+#include <cstddef>
 #include <vector>
 namespace tcr::ir {
 class Graph {
@@ -28,6 +29,10 @@ public:
 
   const std::vector<ValueId>& inputs() const;
   const std::vector<ValueId>& outputs() const;
+  std::size_t nodes_count() const;
+  std::size_t values_count() const;
+  std::size_t inputs_count() const;
+  std::size_t outputs_count() const;
 
   // private attributes
 private:

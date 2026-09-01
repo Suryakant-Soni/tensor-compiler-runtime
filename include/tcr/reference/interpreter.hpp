@@ -1,3 +1,4 @@
+#pragma once
 #include "tcr/ir/graph.hpp"
 #include "tcr/ir/ids.hpp"
 #include "tcr/reference/bindings.hpp"

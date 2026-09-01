@@ -177,6 +177,11 @@ const Node &Graph::node(NodeId id) const {
   }
   return nodes_[id.value];
 }
-const std::vector<ValueId>& Graph::inputs() const { return inputs_; };
-const std::vector<ValueId>& Graph::outputs() const { return outputs_; };
+std::size_t Graph::nodes_count() const { return nodes_.size(); }
+std::size_t Graph::values_count() const { return values_.size(); }
+std::size_t Graph::inputs_count() const{return inputs_.size();}
+std::size_t Graph::outputs_count() const{return outputs_.size();}
+
+const std::vector<ValueId> &Graph::inputs() const { return inputs_; };
+const std::vector<ValueId> &Graph::outputs() const { return outputs_; };
 } // namespace tcr::ir

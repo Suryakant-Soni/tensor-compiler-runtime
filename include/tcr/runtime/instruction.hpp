@@ -1,3 +1,4 @@
+#pragma once
 /**
  * @file instructions.hpp
  * @author your name (you@domain.com)
@@ -16,8 +17,8 @@ moved to those slotids
 #include <vector>
 namespace tcr::runtime {
 
-struct Instructions {
-      Opcode opcode;
+struct Instruction {
+  Opcode opcode;
   std::vector<SlotId> inputs;
   SlotId output_slot_id;
 };
