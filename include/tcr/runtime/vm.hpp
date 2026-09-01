@@ -5,6 +5,7 @@
 namespace tcr::runtime {
 
 class VM {
+public:
   std::vector<Tensor> run(const Program &program, const InputBindings &inputs);
 };
 } // namespace tcr::runtime

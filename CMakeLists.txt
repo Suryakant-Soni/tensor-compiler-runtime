@@ -28,10 +28,19 @@ add_library(tcr STATIC
     src/ir/dtype.cpp
     src/ir/graph.cpp
     src/ir/op.cpp
+
     src/reference/tensor.cpp
     src/reference/bindings.cpp
     src/reference/interpreter.cpp
     src/reference/ops.cpp
+
+    src/compiler/compiler.cpp
+
+    src/runtime/tensor.cpp
+    src/runtime/bindings.cpp
+    src/runtime/program.cpp
+    src/runtime/ops.cpp
+    src/runtime/vm.cpp
 )
 
 # add headers to the main code lib

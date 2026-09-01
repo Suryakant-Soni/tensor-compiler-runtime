@@ -3,12 +3,13 @@
 #include "tcr/runtime/slot_id.hpp"
 #include <cstddef>
 #include <vector>
+#include <utility>
 namespace tcr::runtime {
 
 Program::Program(std::vector<Instruction> instructions,
                  std::vector<SlotId> inputs, std::vector<SlotId> outputs,
                  std::size_t slots_count)
-    : instructions_(instructions), inputs_(inputs), outputs_(outputs),
+    : instructions_(std::move(instructions)), inputs_(std::move(inputs)), outputs_(std::move(outputs)),
       slots_count_(slots_count) {}
 
 const std::vector<Instruction> &Program::instructions() const {
