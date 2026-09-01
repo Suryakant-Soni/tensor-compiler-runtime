@@ -63,6 +63,7 @@ add_executable(tcr_tests tests/ir/test_types.cpp
                          tests/runtime/test_tensor.cpp
                          tests/runtime/test_vm.cpp
                          tests/compiler/test_compiler.cpp
+                         tests/integration/test_compiler_vm_correctness.cpp
                          )
 
 target_link_libraries(tcr_tests
