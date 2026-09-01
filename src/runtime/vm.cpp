@@ -53,7 +53,7 @@ std::vector<Tensor> VM::run(const Program &program,
       break;
     case Opcode::MUL:
       if (instruction.inputs.size() != 2) {
-        throw std::logic_error("ADD expects exactly 2 inputs");
+        throw std::logic_error("MUL expects exactly 2 inputs");
       }
       slots[instruction.output_slot_id.value] =
           mul(get_slot(slots, instruction.inputs[0]),
@@ -61,7 +61,7 @@ std::vector<Tensor> VM::run(const Program &program,
       break;
     case Opcode::MATMUL:
       if (instruction.inputs.size() != 2) {
-        throw std::logic_error("ADD expects exactly 2 inputs");
+        throw std::logic_error("MATMUL expects exactly 2 inputs");
       }
       slots[instruction.output_slot_id.value] =
           matmul(get_slot(slots, instruction.inputs[0]),
@@ -69,7 +69,7 @@ std::vector<Tensor> VM::run(const Program &program,
       break;
     case Opcode::SUM:
       if (instruction.inputs.size() != 1) {
-        throw std::logic_error("ADD expects exactly 2 inputs");
+        throw std::logic_error("SUM expects exactly 1 input");
       }
       slots[instruction.output_slot_id.value] =
           sum(get_slot(slots, instruction.inputs[0]));

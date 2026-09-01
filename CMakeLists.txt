@@ -57,6 +57,12 @@ add_executable(tcr_tests tests/ir/test_types.cpp
                          tests/reference/test_ops.cpp
                          tests/reference/test_bindings.cpp
                          tests/reference/test_tensor.cpp
+                         tests/runtime/test_bindings.cpp
+                         tests/runtime/test_ops.cpp
+                         tests/runtime/test_program.cpp
+                         tests/runtime/test_tensor.cpp
+                         tests/runtime/test_vm.cpp
+                         tests/compiler/test_compiler.cpp
                          )
 
 target_link_libraries(tcr_tests
