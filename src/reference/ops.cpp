@@ -43,7 +43,7 @@ Tensor matmul(const Tensor &lhs, const Tensor &rhs) {
   const auto M = lhs.shape().dim(0);
   const auto K = lhs.shape().dim(1);
   const auto N = rhs.shape().dim(1);
-  std::vector<float> c(static_cast<size_t>(M * N), 0.0f);
+  std::vector<float> c(static_cast<std::size_t>(M * N), 0.0f);
 
   for (std::size_t i = 0; i < M; ++i) {
     for (std::size_t k = 0; k < K; ++k) {

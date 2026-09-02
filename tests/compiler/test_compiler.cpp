@@ -533,3 +533,51 @@ TEST_CASE("Compiler excludes unreachable dependency subtree") {
 
   REQUIRE(program.slots_count() == 4);
 }
+
+// -----------------------------------------------------------------------------
+// Typed metadata propagation through compiler input graph
+// -----------------------------------------------------------------------------
+
+TEST_CASE(
+    "Compiler lowers graph whose operation depends on inferred MatMul type") {
+  Graph graph;
+
+  const auto lhs = graph.input(Shape{2, 3}, Dtype::F32);
+  const auto rhs = graph.input(Shape{3, 4}, Dtype::F32);
+  const auto bias = graph.input(Shape{2, 4}, Dtype::F32);
+
+  // matmul_result is inferred as Shape{2, 4}, F32.
+  const auto matmul_result = graph.matmul(lhs, rhs);
+
+  // This ADD is only legal because the MatMul result metadata
+  // propagated correctly through the graph.
+  const auto out = graph.add(matmul_result, bias);
+
+  graph.set_outputs({out});
+
+  Compiler compiler;
+  const auto program = compiler.compile(graph);
+
+  REQUIRE(program.instructions().size() == 2);
+  REQUIRE(program.slots_count() == 5);
+
+  const auto &matmul_instruction = program.instructions()[0];
+  const auto &add_instruction = program.instructions()[1];
+
+  REQUIRE(matmul_instruction.opcode == Opcode::MATMUL);
+  REQUIRE(matmul_instruction.inputs.size() == 2);
+  REQUIRE(matmul_instruction.inputs[0] == SlotId{0});
+  REQUIRE(matmul_instruction.inputs[1] == SlotId{1});
+  REQUIRE(matmul_instruction.output_slot_id == SlotId{3});
+
+  REQUIRE(add_instruction.opcode == Opcode::ADD);
+  REQUIRE(add_instruction.inputs.size() == 2);
+
+  // ADD consumes the result produced by MATMUL.
+  REQUIRE(add_instruction.inputs[0] == SlotId{3});
+  REQUIRE(add_instruction.inputs[1] == SlotId{2});
+  REQUIRE(add_instruction.output_slot_id == SlotId{4});
+
+  REQUIRE(program.outputs().size() == 1);
+  REQUIRE(program.outputs()[0] == SlotId{4});
+}

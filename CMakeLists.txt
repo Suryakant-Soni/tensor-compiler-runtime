@@ -28,6 +28,7 @@ add_library(tcr STATIC
     src/ir/dtype.cpp
     src/ir/graph.cpp
     src/ir/op.cpp
+    src/ir/type_inference.cpp
 
     src/reference/tensor.cpp
     src/reference/bindings.cpp
@@ -53,6 +54,7 @@ target_include_directories(tcr PUBLIC
 add_executable(tcr_tests tests/ir/test_types.cpp
                          tests/ir/test_graph.cpp
                          tests/ir/test_shape.cpp
+                         tests/ir/test_type_inference.cpp
                          tests/reference/test_interpreter.cpp
                          tests/reference/test_ops.cpp
                          tests/reference/test_bindings.cpp

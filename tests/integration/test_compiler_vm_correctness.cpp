@@ -536,3 +536,70 @@ TEST_CASE("Compiler and VM support input and computed value as outputs") {
   require_same_tensor(expected_x, actual_outputs[0]);
   require_same_tensor(expected_added, actual_outputs[1]);
 }
+
+// -----------------------------------------------------------------------------
+// MATMUL -> ADD TYPE PROPAGATION
+// -----------------------------------------------------------------------------
+
+TEST_CASE("Compiler and VM match reference interpreter when Add consumes "
+          "MatMul result") {
+  Graph graph;
+
+  const auto lhs = graph.input(Shape{2, 3}, Dtype::F32);
+  const auto rhs = graph.input(Shape{3, 2}, Dtype::F32);
+  const auto bias = graph.input(Shape{2, 2}, Dtype::F32);
+
+  const auto matmul_result = graph.matmul(lhs, rhs);
+  const auto out = graph.add(matmul_result, bias);
+
+  graph.set_outputs({out});
+
+  reference::InputBindings reference_inputs;
+  runtime::InputBindings runtime_inputs;
+
+  bind_input(reference_inputs, runtime_inputs, lhs, runtime::SlotId{0},
+             Shape{2, 3},
+             {
+                 1.0F,
+                 2.0F,
+                 3.0F,
+                 4.0F,
+                 5.0F,
+                 6.0F,
+             });
+
+  bind_input(reference_inputs, runtime_inputs, rhs, runtime::SlotId{1},
+             Shape{3, 2},
+             {
+                 7.0F,
+                 8.0F,
+                 9.0F,
+                 10.0F,
+                 11.0F,
+                 12.0F,
+             });
+
+  bind_input(reference_inputs, runtime_inputs, bias, runtime::SlotId{2},
+             Shape{2, 2},
+             {
+                 1.0F,
+                 1.0F,
+                 1.0F,
+                 1.0F,
+             });
+
+  reference::Interpreter interpreter;
+  const auto expected = interpreter.run(graph, out, reference_inputs);
+
+  Compiler compiler;
+  const auto program = compiler.compile(graph);
+
+  runtime::VM vm;
+  const auto actual_outputs = vm.run(program, runtime_inputs);
+
+  REQUIRE(actual_outputs.size() == 1);
+
+  require_same_tensor(expected, actual_outputs[0]);
+
+  REQUIRE(actual_outputs[0].shape() == Shape{2, 2});
+}
