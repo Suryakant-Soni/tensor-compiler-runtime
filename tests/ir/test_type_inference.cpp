@@ -1,8 +1,12 @@
 #include "tcr/ir/dtype.hpp"
+#include "tcr/ir/graph.hpp"
 #include "tcr/ir/op.hpp"
 #include "tcr/ir/shape.hpp"
 #include "tcr/ir/type_inference.hpp"
 #include "tcr/ir/value.hpp"
+#include "tcr/reference/bindings.hpp"
+#include "tcr/reference/interpreter.hpp"
+#include "tcr/reference/tensor.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -81,9 +85,8 @@ TEST_CASE("infer_type rejects Add operands with different shapes",
   const Value lhs = make_value(Shape{2, 3});
   const Value rhs = make_value(Shape{3, 2});
 
-  REQUIRE_THROWS_AS(
-      infer_type(Op::Add, std::vector<const Value *>{&lhs, &rhs}),
-      std::invalid_argument);
+  REQUIRE_THROWS_AS(infer_type(Op::Add, std::vector<const Value *>{&lhs, &rhs}),
+                    std::invalid_argument);
 }
 
 TEST_CASE("infer_type rejects Add operands with different ranks",
@@ -91,9 +94,8 @@ TEST_CASE("infer_type rejects Add operands with different ranks",
   const Value lhs = make_value(Shape{2, 3});
   const Value rhs = make_value(Shape{2, 3, 1});
 
-  REQUIRE_THROWS_AS(
-      infer_type(Op::Add, std::vector<const Value *>{&lhs, &rhs}),
-      std::invalid_argument);
+  REQUIRE_THROWS_AS(infer_type(Op::Add, std::vector<const Value *>{&lhs, &rhs}),
+                    std::invalid_argument);
 }
 
 // ============================================================================
@@ -153,9 +155,8 @@ TEST_CASE("infer_type rejects Mul operands with different shapes",
   const Value lhs = make_value(Shape{2, 3});
   const Value rhs = make_value(Shape{3, 2});
 
-  REQUIRE_THROWS_AS(
-      infer_type(Op::Mul, std::vector<const Value *>{&lhs, &rhs}),
-      std::invalid_argument);
+  REQUIRE_THROWS_AS(infer_type(Op::Mul, std::vector<const Value *>{&lhs, &rhs}),
+                    std::invalid_argument);
 }
 
 TEST_CASE("infer_type rejects Mul operands with different ranks",
@@ -163,17 +164,15 @@ TEST_CASE("infer_type rejects Mul operands with different ranks",
   const Value lhs = make_value(Shape{2, 3});
   const Value rhs = make_value(Shape{2, 3, 1});
 
-  REQUIRE_THROWS_AS(
-      infer_type(Op::Mul, std::vector<const Value *>{&lhs, &rhs}),
-      std::invalid_argument);
+  REQUIRE_THROWS_AS(infer_type(Op::Mul, std::vector<const Value *>{&lhs, &rhs}),
+                    std::invalid_argument);
 }
 
 // ============================================================================
 // MATMUL
 // ============================================================================
 
-TEST_CASE("infer_type infers MatMul result shape",
-          "[type_inference][matmul]") {
+TEST_CASE("infer_type infers MatMul result shape", "[type_inference][matmul]") {
   const Value lhs = make_value(Shape{2, 3});
   const Value rhs = make_value(Shape{3, 4});
 
@@ -398,18 +397,16 @@ TEST_CASE("infer_type handles MatMul with zero shared dimension",
 
 TEST_CASE("infer_type rejects Add with no operands",
           "[type_inference][arity]") {
-  REQUIRE_THROWS_AS(
-      infer_type(Op::Add, std::vector<const Value *>{}),
-      std::invalid_argument);
+  REQUIRE_THROWS_AS(infer_type(Op::Add, std::vector<const Value *>{}),
+                    std::invalid_argument);
 }
 
 TEST_CASE("infer_type rejects Add with one operand",
           "[type_inference][arity]") {
   const Value input = make_value(Shape{2, 3});
 
-  REQUIRE_THROWS_AS(
-      infer_type(Op::Add, std::vector<const Value *>{&input}),
-      std::invalid_argument);
+  REQUIRE_THROWS_AS(infer_type(Op::Add, std::vector<const Value *>{&input}),
+                    std::invalid_argument);
 }
 
 TEST_CASE("infer_type rejects Add with more than two operands",
@@ -418,34 +415,30 @@ TEST_CASE("infer_type rejects Add with more than two operands",
   const Value b = make_value(Shape{2, 3});
   const Value c = make_value(Shape{2, 3});
 
-  REQUIRE_THROWS_AS(
-      infer_type(Op::Add, std::vector<const Value *>{&a, &b, &c}),
-      std::invalid_argument);
+  REQUIRE_THROWS_AS(infer_type(Op::Add, std::vector<const Value *>{&a, &b, &c}),
+                    std::invalid_argument);
 }
 
 TEST_CASE("infer_type rejects Mul with wrong arity",
           "[type_inference][arity]") {
   const Value input = make_value(Shape{2, 3});
 
-  REQUIRE_THROWS_AS(
-      infer_type(Op::Mul, std::vector<const Value *>{&input}),
-      std::invalid_argument);
+  REQUIRE_THROWS_AS(infer_type(Op::Mul, std::vector<const Value *>{&input}),
+                    std::invalid_argument);
 }
 
 TEST_CASE("infer_type rejects MatMul with wrong arity",
           "[type_inference][arity]") {
   const Value input = make_value(Shape{2, 3});
 
-  REQUIRE_THROWS_AS(
-      infer_type(Op::MatMul, std::vector<const Value *>{&input}),
-      std::invalid_argument);
+  REQUIRE_THROWS_AS(infer_type(Op::MatMul, std::vector<const Value *>{&input}),
+                    std::invalid_argument);
 }
 
 TEST_CASE("infer_type rejects Sum with no operands",
           "[type_inference][arity]") {
-  REQUIRE_THROWS_AS(
-      infer_type(Op::Sum, std::vector<const Value *>{}),
-      std::invalid_argument);
+  REQUIRE_THROWS_AS(infer_type(Op::Sum, std::vector<const Value *>{}),
+                    std::invalid_argument);
 }
 
 TEST_CASE("infer_type rejects Sum with more than one operand",
@@ -453,9 +446,8 @@ TEST_CASE("infer_type rejects Sum with more than one operand",
   const Value a = make_value(Shape{2, 3});
   const Value b = make_value(Shape{2, 3});
 
-  REQUIRE_THROWS_AS(
-      infer_type(Op::Sum, std::vector<const Value *>{&a, &b}),
-      std::invalid_argument);
+  REQUIRE_THROWS_AS(infer_type(Op::Sum, std::vector<const Value *>{&a, &b}),
+                    std::invalid_argument);
 }
 
 // ============================================================================
@@ -466,4 +458,30 @@ TEST_CASE("infer_type rejects Input because Input has no inferred result type",
           "[type_inference][unsupported]") {
   REQUIRE_THROWS_AS(infer_type(Op::Input, std::vector<const Value *>{}),
                     std::logic_error);
+}
+
+TEST_CASE("reference sum independently produces scalar shape",
+          "[reference][sum]") {
+  Graph g;
+
+  ValueId input = g.input(Shape{2, 3, 4, 5}, Dtype::F32);
+  ValueId out = g.sum(input);
+  g.set_outputs({out});
+
+  tcr::reference::InputBindings bindings;
+
+  bindings.bind(input, tcr::reference::Tensor{
+                           Shape{2, 3, 4, 5},
+                           Dtype::F32,
+                           std::vector<float>(120, 1.0f),
+                       });
+
+  tcr::reference::Interpreter interpreter;
+
+  const auto result = interpreter.run(g, out, bindings);
+
+  REQUIRE(result.shape() == Shape{});
+  REQUIRE(result.dtype() == Dtype::F32);
+  REQUIRE(result.data().size() == 1);
+  REQUIRE(result.data()[0] == 120.0f);
 }

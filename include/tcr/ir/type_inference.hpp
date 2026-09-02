@@ -1,3 +1,4 @@
+#pragma once
 #include "tcr/ir/dtype.hpp"
 #include "tcr/ir/op.hpp"
 #include "tcr/ir/shape.hpp"
