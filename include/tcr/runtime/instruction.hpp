@@ -14,13 +14,54 @@ moved to those slotids
 
 #include "tcr/runtime/opcode.hpp"
 #include "tcr/runtime/slot_id.hpp"
-#include <vector>
+#include <cstddef>
 namespace tcr::runtime {
+struct ScalarId {
+  std::size_t value{};
+};
+
+struct IndexId {
+  std::size_t value{};
+};
+
+struct IndexOperand {
+  enum class Kind {
+    Register,
+    Constant,
+  };
+  // default value is Register
+  Kind kind{Kind::Register};
+  IndexId reg{};
+  std::size_t constant{0};
+};
 
 struct Instruction {
   Opcode opcode;
-  std::vector<SlotId> inputs;
-  SlotId output_slot_id;
+
+  // scalar/F32 arithmetic
+  ScalarId scalar_dst{};
+  ScalarId scalar_lhs{};
+  ScalarId scalar_rhs{};
+
+  // index/integer arithmetic
+  IndexId index_dst{};
+  IndexOperand index_lhs{};
+  IndexOperand index_rhs{};
+
+  // memory access
+  SlotId buffer{};
+  IndexOperand offset{};
+
+  // scalar constant
+  float constant{0.0F};
+
+  // Loop Constrol
+  IndexId loop_index{};
+  IndexOperand loop_begin{};
+  IndexOperand loop_end{};
+
+  // instruction index used for control-flow jumps
+  std::size_t jump;
 };
 
 } // namespace tcr::runtime

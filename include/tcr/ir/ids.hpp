@@ -1,12 +1,20 @@
 #pragma once
 // documents the id type given to nodes and tensor-input/output values
+#include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <ostream>
 namespace tcr::ir {
 struct ValueId {
   std::int32_t value;
   // equality implemented
   bool operator==(const ValueId &) const = default;
+};
+
+struct ValueIdHash {
+  std::size_t operator()(const ValueId &id) const noexcept {
+    return std::hash<std::int32_t>{}(id.value);
+  }
 };
 
 struct NodeId {

@@ -5,9 +5,18 @@
 
 namespace tcr::runtime {
 enum class Opcode {
-  ADD,
-  MUL,
-  SUM,
-  MATMUL,
+  Constant,
+
+  Load,
+  Store,
+
+  Add,
+  Mul,
+
+  LoopBegin,
+  LoopEnd,
+
+  IndexMul,
+  IndexAdd
 };
 }

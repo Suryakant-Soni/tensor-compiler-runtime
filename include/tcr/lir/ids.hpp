@@ -1,7 +1,7 @@
 #pragma once
 #include <cstddef>
 
-namespace trc::lir {
+namespace tcr::lir {
 
 struct BufferId {
   std::size_t value;

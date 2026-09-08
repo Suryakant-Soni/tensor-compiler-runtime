@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <variant>
 namespace tcr::lir {
-using trc::lir::IndexId;
+using tcr::lir::IndexId;
 // indexexpression is either a constant index mentioned in code or the index
 // variable
 
