@@ -59,15 +59,23 @@ add_executable(tcr_tests tests/ir/test_types.cpp
                          tests/ir/test_graph.cpp
                          tests/ir/test_shape.cpp
                          tests/ir/test_type_inference.cpp
+
                          tests/reference/test_interpreter.cpp
                          tests/reference/test_ops.cpp
                          tests/reference/test_bindings.cpp
                          tests/reference/test_tensor.cpp
+
                          tests/runtime/test_bindings.cpp
                          tests/runtime/test_program.cpp
                          tests/runtime/test_tensor.cpp
                          tests/runtime/test_vm.cpp
+
                          tests/compiler/test_compiler.cpp
+                         tests/compiler/test_lowering.cpp
+                         tests/compiler/test_program_emitter.cpp
+
+                         tests/lir/test_program.cpp
+
                          tests/integration/test_compiler_vm_correctness.cpp
                          )
 

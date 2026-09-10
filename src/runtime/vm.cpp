@@ -118,7 +118,7 @@ std::vector<Tensor> VM::run(const runtime::Program &rt_program,
         throw std::logic_error("given runtime scalar position to be stored "
                                "into tensor; is out of range");
       }
-      tensor.store(offset, rt_instruc.scalar_lhs.value);
+      tensor.store(offset, scalars[rt_instruc.scalar_lhs.value]);
       pc++;
       break;
     }
