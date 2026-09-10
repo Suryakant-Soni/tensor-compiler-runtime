@@ -7,12 +7,10 @@
 #include "tcr/lir/ids.hpp"
 #include "tcr/lir/program.hpp"
 #include <unordered_map>
-#include <vector>
 namespace tcr::compiler {
 class Lowering {
 public:
-  lir::Program lower(const ir::Graph &graph,
-                     const std::vector<ir::ValueId> &outputs);
+  lir::Program lower(const ir::Graph &graph);
 
 private:
   enum class ElementwiseBinaryKind {

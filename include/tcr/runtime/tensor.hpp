@@ -12,6 +12,8 @@
 
 #include "tcr/ir/dtype.hpp"
 #include "tcr/ir/shape.hpp"
+#include <cstddef>
+#include <memory>
 #include <vector>
 namespace tcr::runtime {
 using tcr::ir::Dtype;
@@ -22,10 +24,12 @@ public:
   const Shape &shape() const;
   Dtype dtype() const;
   const std::vector<float> &data() const;
+  float load(std::size_t offset) const;
+  void store(std::size_t offset, float value);
 
 private:
   Shape shape_;
   Dtype dtype_;
-  std::vector<float> data_;
+  std::shared_ptr<std::vector<float>> data_;
 };
 } // namespace tcr::runtime

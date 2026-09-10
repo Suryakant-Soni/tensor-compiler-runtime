@@ -44,6 +44,7 @@ public:
 
   std::size_t scalar_count() const;
   std::size_t index_count() const;
+  std::size_t buffer_count() const;
 
 private:
   std::vector<Buffer> buffer_;
@@ -51,7 +52,7 @@ private:
   std::vector<BufferId> outputs_;
   std::vector<Instruction> instructions_;
 
-  std::size_t next_scalar_;
-  std::size_t next_index_;
+  std::size_t next_scalar_{0};
+  std::size_t next_index_{0};
 };
 } // namespace tcr::lir

@@ -13,8 +13,8 @@
 #include <vector>
 namespace tcr::compiler {
 
-lir::Program Lowering::lower(const ir::Graph &graph,
-                             const std::vector<ir::ValueId> &outputs) {
+lir::Program Lowering::lower(const ir::Graph &graph) {
+  const std::vector<ir::ValueId> &outputs = graph.outputs();
 
   lowered_value_to_buffer_.clear();
   lir::Program program;

@@ -2,6 +2,8 @@
 #include "tcr/ir/dtype.hpp"
 #include "tcr/ir/shape.hpp"
 
+#include <cstddef>
+#include <memory>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -12,8 +14,9 @@ using tcr::ir::Dtype;
 using tcr::ir::Shape;
 
 Tensor::Tensor(Shape shape, Dtype dtype, std::vector<float> data)
-    : shape_(std::move(shape)), dtype_(dtype), data_(std::move(data)) {
-  if (shape_.num_elements() != data_.size()) {
+    : shape_(std::move(shape)), dtype_(dtype),
+      data_(std::make_shared<std::vector<float>>(std::move(data))) {
+  if (shape_.num_elements() != data_->size()) {
     throw std::invalid_argument(
         "tensor data size does not match shape num_elements");
   }
@@ -23,6 +26,9 @@ const Shape &Tensor::shape() const { return shape_; }
 
 Dtype Tensor::dtype() const { return dtype_; }
 
-const std::vector<float> &Tensor::data() const { return data_; }
-
+const std::vector<float> &Tensor::data() const { return *data_; }
+float Tensor::load(std::size_t offset) const { return data()[offset]; }
+void Tensor::store(std::size_t offset, float value) {
+  (*data_)[offset] = value;
+}
 } // namespace tcr::runtime

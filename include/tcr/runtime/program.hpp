@@ -11,18 +11,26 @@
  *
  */
 
+#include "tcr/ir/dtype.hpp"
+#include "tcr/ir/shape.hpp"
 #include "tcr/runtime/instruction.hpp"
 #include "tcr/runtime/slot_id.hpp"
 #include <cstddef>
 #include <vector>
 namespace tcr::runtime {
 
+struct SlotTensorInfo {
+  SlotId id;
+  ir::Shape shape;
+  ir::Dtype dtype;
+};
+
 class Program {
 public:
   Program();
 
   Program(std::vector<Instruction> instructions, std::vector<SlotId> inputs,
-          std::vector<SlotId> outputs, std::size_t slots_count,
+          std::vector<SlotId> outputs, std::vector<SlotTensorInfo> slots,
           std::size_t scalar_count, std::size_t index_count);
 
   // instructions mutable and immutable getters
@@ -37,10 +45,7 @@ public:
   std::size_t slots_count() const;
   std::size_t scalar_count() const;
   std::size_t index_count() const;
-
-  void set_slots_count(std::size_t count);
-  void set_scalar_count(std::size_t count);
-  void set_index_count(std::size_t count);
+  const SlotTensorInfo &tensor_meta_by_slot(SlotId slot_id) const;
 
 private:
   std::vector<Instruction> instructions_;
@@ -48,7 +53,8 @@ private:
   std::vector<SlotId> inputs_;
   std::vector<SlotId> outputs_;
 
-  std::size_t slots_count_{0};
+  std::vector<SlotTensorInfo> slots_;
+
   std::size_t scalar_count_{0};
   std::size_t index_count_{0};
 };
