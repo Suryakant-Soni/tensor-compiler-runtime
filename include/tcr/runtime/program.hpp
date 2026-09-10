@@ -12,6 +12,7 @@
  */
 
 #include "tcr/ir/dtype.hpp"
+#include "tcr/ir/ids.hpp"
 #include "tcr/ir/shape.hpp"
 #include "tcr/runtime/instruction.hpp"
 #include "tcr/runtime/slot_id.hpp"
@@ -25,13 +26,19 @@ struct SlotTensorInfo {
   ir::Dtype dtype;
 };
 
+struct ValueIdSlotIdInput {
+  ir::ValueId value_id;
+  SlotId slot_id;
+};
+
 class Program {
 public:
   Program();
 
-  Program(std::vector<Instruction> instructions, std::vector<SlotId> inputs,
-          std::vector<SlotId> outputs, std::vector<SlotTensorInfo> slots,
-          std::size_t scalar_count, std::size_t index_count);
+  Program(std::vector<Instruction> instructions,
+          std::vector<ValueIdSlotIdInput> inputs, std::vector<SlotId> outputs,
+          std::vector<SlotTensorInfo> slots, std::size_t scalar_count,
+          std::size_t index_count);
 
   // instructions mutable and immutable getters
   const std::vector<Instruction> &instructions() const;
@@ -39,18 +46,19 @@ public:
   // add new instruction
   void add_instruction(Instruction instruction);
 
-  const std::vector<SlotId> &inputs() const;
+  const std::vector<ValueIdSlotIdInput> &inputs() const;
   const std::vector<SlotId> &outputs() const;
 
   std::size_t slots_count() const;
   std::size_t scalar_count() const;
   std::size_t index_count() const;
   const SlotTensorInfo &tensor_meta_by_slot(SlotId slot_id) const;
+  SlotId get_slotid_from_valueid(ir::ValueId value_id) const;
 
 private:
   std::vector<Instruction> instructions_;
 
-  std::vector<SlotId> inputs_;
+  std::vector<ValueIdSlotIdInput> inputs_;
   std::vector<SlotId> outputs_;
 
   std::vector<SlotTensorInfo> slots_;

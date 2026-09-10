@@ -18,4 +18,4 @@ struct IndexId {
   bool operator==(const IndexId &) const = default;
 };
 
-} // namespace trc::lir
+} // namespace tcr::lir

@@ -61,7 +61,7 @@ struct Instruction {
   IndexOperand loop_end{};
 
   // instruction index used for control-flow jumps
-  std::size_t jump;
+  std::size_t jump{};
 };
 
 } // namespace tcr::runtime

@@ -59,11 +59,11 @@ std::vector<Tensor> VM::run(const runtime::Program &rt_program,
   std::vector<std::size_t> indices(rt_program.index_count());
 
   // populate tensor values for input slots
-  for (const SlotId slot_id : rt_program.inputs()) {
-    if (slot_id.value >= slots.size()) {
+  for (const auto value_slot_id : rt_program.inputs()) {
+    if (value_slot_id.slot_id.value >= slots.size()) {
       throw std::logic_error("runtime slot id out of range");
     }
-    slots[slot_id.value] = bindings.get(slot_id);
+    slots[value_slot_id.slot_id.value] = bindings.get(value_slot_id.slot_id);
   }
 
   // populate tensor for non-input slots

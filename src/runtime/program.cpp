@@ -1,4 +1,5 @@
 #include "tcr/runtime/program.hpp"
+#include "tcr/ir/ids.hpp"
 #include "tcr/runtime/instruction.hpp"
 #include "tcr/runtime/slot_id.hpp"
 #include <cstddef>
@@ -10,9 +11,9 @@ namespace tcr::runtime {
 Program::Program() = default;
 
 Program::Program(std::vector<Instruction> instructions,
-                 std::vector<SlotId> inputs, std::vector<SlotId> outputs,
-                 std::vector<SlotTensorInfo> slots, std::size_t scalar_count,
-                 std::size_t index_count)
+                 std::vector<ValueIdSlotIdInput> inputs,
+                 std::vector<SlotId> outputs, std::vector<SlotTensorInfo> slots,
+                 std::size_t scalar_count, std::size_t index_count)
     : instructions_(std::move(instructions)), inputs_(std::move(inputs)),
       outputs_(std::move(outputs)), slots_(std::move(slots)),
       scalar_count_(scalar_count), index_count_(index_count) {}
@@ -25,7 +26,9 @@ void Program::add_instruction(Instruction instruction) {
   instructions_.push_back(std::move(instruction));
 }
 
-const std::vector<SlotId> &Program::inputs() const { return inputs_; }
+const std::vector<ValueIdSlotIdInput> &Program::inputs() const {
+  return inputs_;
+}
 const std::vector<SlotId> &Program::outputs() const { return outputs_; }
 
 std::size_t Program::slots_count() const { return slots_.size(); }
@@ -38,6 +41,15 @@ const SlotTensorInfo &Program::tensor_meta_by_slot(SlotId slot_id) const {
         "runtime slotid is out of range(greater than slots count)");
   }
   return slots_[slot_id.value];
+}
+
+SlotId Program::get_slotid_from_valueid(ir::ValueId value_id) const {
+  for (const auto &value_slot_id : inputs_) {
+    if (value_id == value_slot_id.value_id) {
+      return value_slot_id.slot_id;
+    }
+  }
+  throw std::logic_error("valueid and slotid mapping not found");
 }
 
 } // namespace tcr::runtime

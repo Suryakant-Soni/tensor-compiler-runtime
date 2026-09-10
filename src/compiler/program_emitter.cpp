@@ -126,7 +126,7 @@ void emit_instruction(
 runtime::Program ProgramEmitter::emit(const lir::Program &lir_program) {
 
   std::vector<runtime::Instruction> rt_instructions;
-  std::vector<runtime::SlotId> rt_inputs;
+  std::vector<runtime::ValueIdSlotIdInput> rt_inputs;
   std::vector<runtime::SlotId> rt_outputs;
 
   // index = bufferid and value = slotid
@@ -143,7 +143,8 @@ runtime::Program ProgramEmitter::emit(const lir::Program &lir_program) {
   }
 
   for (const auto &lir_input : lir_program.inputs()) {
-    rt_inputs.push_back(buffer_to_slot[lir_input.buffer.value].id);
+    rt_inputs.push_back(runtime::ValueIdSlotIdInput{
+        lir_input.value, buffer_to_slot[lir_input.buffer.value].id});
   }
 
   for (const auto &lir_output : lir_program.outputs()) {
