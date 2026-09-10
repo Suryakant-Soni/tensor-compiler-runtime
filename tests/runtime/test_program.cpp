@@ -13,6 +13,7 @@
 
 using tcr::ir::Dtype;
 using tcr::ir::Shape;
+using tcr::ir::ValueId;
 
 using tcr::runtime::IndexOperand;
 using tcr::runtime::Instruction;
@@ -21,6 +22,7 @@ using tcr::runtime::Program;
 using tcr::runtime::ScalarId;
 using tcr::runtime::SlotId;
 using tcr::runtime::SlotTensorInfo;
+using tcr::runtime::ValueIdSlotIdInput;
 
 // -----------------------------------------------------------------------------
 // Default construction
@@ -60,8 +62,7 @@ TEST_CASE("runtime Program stores slot metadata") {
 
   REQUIRE(program.slots_count() == 1);
 
-  const auto &info =
-      program.tensor_meta_by_slot(SlotId{0});
+  const auto &info = program.tensor_meta_by_slot(SlotId{0});
 
   REQUIRE(info.id == SlotId{0});
   REQUIRE(info.shape == Shape{3});
@@ -96,14 +97,11 @@ TEST_CASE("runtime Program stores metadata for multiple slots") {
 
   REQUIRE(program.slots_count() == 3);
 
-  const auto &first =
-      program.tensor_meta_by_slot(SlotId{0});
+  const auto &first = program.tensor_meta_by_slot(SlotId{0});
 
-  const auto &second =
-      program.tensor_meta_by_slot(SlotId{1});
+  const auto &second = program.tensor_meta_by_slot(SlotId{1});
 
-  const auto &third =
-      program.tensor_meta_by_slot(SlotId{2});
+  const auto &third = program.tensor_meta_by_slot(SlotId{2});
 
   REQUIRE(first.id == SlotId{0});
   REQUIRE(first.shape == Shape{2});
@@ -120,12 +118,7 @@ TEST_CASE("runtime Program stores metadata for multiple slots") {
 
 TEST_CASE("runtime Program supports zero slots") {
   const Program program{
-      {},
-      {},
-      {},
-      {},
-      0,
-      0,
+      {}, {}, {}, {}, 0, 0,
   };
 
   REQUIRE(program.slots_count() == 0);
@@ -165,7 +158,8 @@ TEST_CASE("runtime Program slot count comes from metadata vector size") {
   REQUIRE(program.slots_count() == 4);
 }
 
-TEST_CASE("runtime Program tensor_meta_by_slot returns metadata by slot index") {
+TEST_CASE(
+    "runtime Program tensor_meta_by_slot returns metadata by slot index") {
   const Program program{
       {},
       {},
@@ -186,16 +180,13 @@ TEST_CASE("runtime Program tensor_meta_by_slot returns metadata by slot index") 
       0,
   };
 
-  REQUIRE(
-      program.tensor_meta_by_slot(SlotId{0}).shape ==
-      Shape{10});
+  REQUIRE(program.tensor_meta_by_slot(SlotId{0}).shape == Shape{10});
 
-  REQUIRE(
-      program.tensor_meta_by_slot(SlotId{1}).shape ==
-      Shape{20});
+  REQUIRE(program.tensor_meta_by_slot(SlotId{1}).shape == Shape{20});
 }
 
-TEST_CASE("runtime Program tensor_meta_by_slot rejects slot equal to slot count") {
+TEST_CASE(
+    "runtime Program tensor_meta_by_slot rejects slot equal to slot count") {
   const Program program{
       {},
       {},
@@ -211,12 +202,11 @@ TEST_CASE("runtime Program tensor_meta_by_slot rejects slot equal to slot count"
       0,
   };
 
-  REQUIRE_THROWS_AS(
-      program.tensor_meta_by_slot(SlotId{1}),
-      std::out_of_range);
+  REQUIRE_THROWS_AS(program.tensor_meta_by_slot(SlotId{1}), std::out_of_range);
 }
 
-TEST_CASE("runtime Program tensor_meta_by_slot rejects slot greater than slot count") {
+TEST_CASE("runtime Program tensor_meta_by_slot rejects slot greater than slot "
+          "count") {
   const Program program{
       {},
       {},
@@ -232,17 +222,15 @@ TEST_CASE("runtime Program tensor_meta_by_slot rejects slot greater than slot co
       0,
   };
 
-  REQUIRE_THROWS_AS(
-      program.tensor_meta_by_slot(SlotId{100}),
-      std::out_of_range);
+  REQUIRE_THROWS_AS(program.tensor_meta_by_slot(SlotId{100}),
+                    std::out_of_range);
 }
 
-TEST_CASE("runtime Program tensor_meta_by_slot rejects any slot when program has no slots") {
+TEST_CASE("runtime Program tensor_meta_by_slot rejects any slot when program "
+          "has no slots") {
   const Program program;
 
-  REQUIRE_THROWS_AS(
-      program.tensor_meta_by_slot(SlotId{0}),
-      std::out_of_range);
+  REQUIRE_THROWS_AS(program.tensor_meta_by_slot(SlotId{0}), std::out_of_range);
 }
 
 // -----------------------------------------------------------------------------
@@ -253,9 +241,9 @@ TEST_CASE("runtime Program stores input slots") {
   const Program program{
       {},
       {
-          SlotId{0},
-          SlotId{1},
-          SlotId{3},
+          ValueIdSlotIdInput{ValueId{10}, SlotId{0}},
+          ValueIdSlotIdInput{ValueId{20}, SlotId{1}},
+          ValueIdSlotIdInput{ValueId{30}, SlotId{3}},
       },
       {},
       {
@@ -270,18 +258,25 @@ TEST_CASE("runtime Program stores input slots") {
 
   REQUIRE(program.inputs().size() == 3);
 
-  REQUIRE(program.inputs()[0] == SlotId{0});
-  REQUIRE(program.inputs()[1] == SlotId{1});
-  REQUIRE(program.inputs()[2] == SlotId{3});
+  REQUIRE(program.inputs()[0].value_id == ValueId{10});
+  REQUIRE(program.inputs()[0].slot_id == SlotId{0});
+  REQUIRE(program.inputs()[1].value_id == ValueId{20});
+  REQUIRE(program.inputs()[1].slot_id == SlotId{1});
+  REQUIRE(program.inputs()[2].value_id == ValueId{30});
+  REQUIRE(program.inputs()[2].slot_id == SlotId{3});
+
+  REQUIRE(program.get_slotid_from_valueid(ValueId{10}) == SlotId{0});
+  REQUIRE(program.get_slotid_from_valueid(ValueId{20}) == SlotId{1});
+  REQUIRE(program.get_slotid_from_valueid(ValueId{30}) == SlotId{3});
 }
 
 TEST_CASE("runtime Program preserves input slot ordering") {
   const Program program{
       {},
       {
-          SlotId{4},
-          SlotId{1},
-          SlotId{3},
+          ValueIdSlotIdInput{ValueId{10}, SlotId{4}},
+          ValueIdSlotIdInput{ValueId{20}, SlotId{1}},
+          ValueIdSlotIdInput{ValueId{30}, SlotId{3}},
       },
       {},
       {
@@ -297,9 +292,34 @@ TEST_CASE("runtime Program preserves input slot ordering") {
 
   REQUIRE(program.inputs().size() == 3);
 
-  REQUIRE(program.inputs()[0] == SlotId{4});
-  REQUIRE(program.inputs()[1] == SlotId{1});
-  REQUIRE(program.inputs()[2] == SlotId{3});
+  REQUIRE(program.inputs()[0].value_id == ValueId{10});
+  REQUIRE(program.inputs()[0].slot_id == SlotId{4});
+  REQUIRE(program.inputs()[1].value_id == ValueId{20});
+  REQUIRE(program.inputs()[1].slot_id == SlotId{1});
+  REQUIRE(program.inputs()[2].value_id == ValueId{30});
+  REQUIRE(program.inputs()[2].slot_id == SlotId{3});
+
+  REQUIRE(program.get_slotid_from_valueid(ValueId{10}) == SlotId{4});
+  REQUIRE(program.get_slotid_from_valueid(ValueId{20}) == SlotId{1});
+  REQUIRE(program.get_slotid_from_valueid(ValueId{30}) == SlotId{3});
+}
+
+TEST_CASE("runtime Program rejects ValueId that is not a runtime input") {
+  const Program program{
+      {},
+      {
+          ValueIdSlotIdInput{ValueId{10}, SlotId{0}},
+      },
+      {},
+      {
+          SlotTensorInfo{SlotId{0}, Shape{1}, Dtype::F32},
+      },
+      0,
+      0,
+  };
+
+  REQUIRE_THROWS_AS(program.get_slotid_from_valueid(ValueId{99}),
+                    std::logic_error);
 }
 
 TEST_CASE("runtime Program supports no inputs") {
@@ -384,7 +404,7 @@ TEST_CASE("runtime Program preserves output slot ordering") {
 TEST_CASE("runtime Program supports no outputs") {
   const Program program{
       {},
-      {SlotId{0}},
+      {ValueIdSlotIdInput{ValueId{10}, SlotId{0}}},
       {},
       {
           SlotTensorInfo{
@@ -405,8 +425,8 @@ TEST_CASE("runtime Program supports multiple inputs and outputs") {
   const Program program{
       {},
       {
-          SlotId{0},
-          SlotId{1},
+          ValueIdSlotIdInput{ValueId{10}, SlotId{0}},
+          ValueIdSlotIdInput{ValueId{20}, SlotId{1}},
       },
       {
           SlotId{3},
@@ -427,8 +447,10 @@ TEST_CASE("runtime Program supports multiple inputs and outputs") {
   REQUIRE(program.outputs().size() == 2);
   REQUIRE(program.slots_count() == 5);
 
-  REQUIRE(program.inputs()[0] == SlotId{0});
-  REQUIRE(program.inputs()[1] == SlotId{1});
+  REQUIRE(program.inputs()[0].value_id == ValueId{10});
+  REQUIRE(program.inputs()[0].slot_id == SlotId{0});
+  REQUIRE(program.inputs()[1].value_id == ValueId{20});
+  REQUIRE(program.inputs()[1].slot_id == SlotId{1});
 
   REQUIRE(program.outputs()[0] == SlotId{3});
   REQUIRE(program.outputs()[1] == SlotId{4});
@@ -440,12 +462,7 @@ TEST_CASE("runtime Program supports multiple inputs and outputs") {
 
 TEST_CASE("runtime Program stores scalar count") {
   const Program program{
-      {},
-      {},
-      {},
-      {},
-      7,
-      0,
+      {}, {}, {}, {}, 7, 0,
   };
 
   REQUIRE(program.scalar_count() == 7);
@@ -453,12 +470,7 @@ TEST_CASE("runtime Program stores scalar count") {
 
 TEST_CASE("runtime Program supports zero scalar registers") {
   const Program program{
-      {},
-      {},
-      {},
-      {},
-      0,
-      0,
+      {}, {}, {}, {}, 0, 0,
   };
 
   REQUIRE(program.scalar_count() == 0);
@@ -466,12 +478,7 @@ TEST_CASE("runtime Program supports zero scalar registers") {
 
 TEST_CASE("runtime Program stores index count") {
   const Program program{
-      {},
-      {},
-      {},
-      {},
-      0,
-      9,
+      {}, {}, {}, {}, 0, 9,
   };
 
   REQUIRE(program.index_count() == 9);
@@ -479,12 +486,7 @@ TEST_CASE("runtime Program stores index count") {
 
 TEST_CASE("runtime Program supports zero index registers") {
   const Program program{
-      {},
-      {},
-      {},
-      {},
-      0,
-      0,
+      {}, {}, {}, {}, 0, 0,
   };
 
   REQUIRE(program.index_count() == 0);
@@ -492,12 +494,7 @@ TEST_CASE("runtime Program supports zero index registers") {
 
 TEST_CASE("runtime Program stores scalar and index counts independently") {
   const Program program{
-      {},
-      {},
-      {},
-      {},
-      4,
-      6,
+      {}, {}, {}, {}, 4, 6,
   };
 
   REQUIRE(program.scalar_count() == 4);
@@ -535,29 +532,17 @@ TEST_CASE("runtime Program stores instruction list") {
 
   REQUIRE(program.instructions().size() == 2);
 
-  REQUIRE(
-      program.instructions()[0].opcode ==
-      Opcode::Constant);
+  REQUIRE(program.instructions()[0].opcode == Opcode::Constant);
 
-  REQUIRE(
-      program.instructions()[1].opcode ==
-      Opcode::Constant);
+  REQUIRE(program.instructions()[1].opcode == Opcode::Constant);
 
-  REQUIRE(
-      program.instructions()[0].scalar_dst.value ==
-      0);
+  REQUIRE(program.instructions()[0].scalar_dst.value == 0);
 
-  REQUIRE(
-      program.instructions()[1].scalar_dst.value ==
-      1);
+  REQUIRE(program.instructions()[1].scalar_dst.value == 1);
 
-  REQUIRE(
-      program.instructions()[0].constant ==
-      10.0F);
+  REQUIRE(program.instructions()[0].constant == 10.0F);
 
-  REQUIRE(
-      program.instructions()[1].constant ==
-      20.0F);
+  REQUIRE(program.instructions()[1].constant == 20.0F);
 }
 
 TEST_CASE("runtime Program preserves instruction execution order") {
@@ -580,8 +565,7 @@ TEST_CASE("runtime Program preserves instruction execution order") {
       .buffer = SlotId{0},
       .offset =
           IndexOperand{
-              .kind =
-                  IndexOperand::Kind::Constant,
+              .kind = IndexOperand::Kind::Constant,
               .constant = 0,
           },
   };
@@ -607,17 +591,11 @@ TEST_CASE("runtime Program preserves instruction execution order") {
 
   REQUIRE(program.instructions().size() == 3);
 
-  REQUIRE(
-      program.instructions()[0].opcode ==
-      Opcode::Constant);
+  REQUIRE(program.instructions()[0].opcode == Opcode::Constant);
 
-  REQUIRE(
-      program.instructions()[1].opcode ==
-      Opcode::Add);
+  REQUIRE(program.instructions()[1].opcode == Opcode::Add);
 
-  REQUIRE(
-      program.instructions()[2].opcode ==
-      Opcode::Store);
+  REQUIRE(program.instructions()[2].opcode == Opcode::Store);
 }
 
 // -----------------------------------------------------------------------------
@@ -627,62 +605,50 @@ TEST_CASE("runtime Program preserves instruction execution order") {
 TEST_CASE("runtime Program add_instruction appends instruction") {
   Program program;
 
-  program.add_instruction(
-      Instruction{
-          .opcode = Opcode::Constant,
-          .scalar_dst = ScalarId{0},
-          .constant = 42.0F,
-      });
+  program.add_instruction(Instruction{
+      .opcode = Opcode::Constant,
+      .scalar_dst = ScalarId{0},
+      .constant = 42.0F,
+  });
 
   REQUIRE(program.instructions().size() == 1);
 
-  REQUIRE(
-      program.instructions()[0].opcode ==
-      Opcode::Constant);
+  REQUIRE(program.instructions()[0].opcode == Opcode::Constant);
 
-  REQUIRE(
-      program.instructions()[0].scalar_dst.value ==
-      0);
+  REQUIRE(program.instructions()[0].scalar_dst.value == 0);
 
-  REQUIRE(
-      program.instructions()[0].constant ==
-      42.0F);
+  REQUIRE(program.instructions()[0].constant == 42.0F);
 }
 
 TEST_CASE("runtime Program add_instruction preserves append order") {
   Program program;
 
-  program.add_instruction(
-      Instruction{
-          .opcode = Opcode::Constant,
-          .scalar_dst = ScalarId{0},
-          .constant = 5.0F,
-      });
+  program.add_instruction(Instruction{
+      .opcode = Opcode::Constant,
+      .scalar_dst = ScalarId{0},
+      .constant = 5.0F,
+  });
 
-  program.add_instruction(
-      Instruction{
-          .opcode = Opcode::Mul,
-          .scalar_dst = ScalarId{2},
-          .scalar_lhs = ScalarId{0},
-          .scalar_rhs = ScalarId{1},
-      });
+  program.add_instruction(Instruction{
+      .opcode = Opcode::Mul,
+      .scalar_dst = ScalarId{2},
+      .scalar_lhs = ScalarId{0},
+      .scalar_rhs = ScalarId{1},
+  });
 
   REQUIRE(program.instructions().size() == 2);
 
-  REQUIRE(
-      program.instructions()[0].opcode ==
-      Opcode::Constant);
+  REQUIRE(program.instructions()[0].opcode == Opcode::Constant);
 
-  REQUIRE(
-      program.instructions()[1].opcode ==
-      Opcode::Mul);
+  REQUIRE(program.instructions()[1].opcode == Opcode::Mul);
 }
 
 // -----------------------------------------------------------------------------
 // Mutable instructions()
 // -----------------------------------------------------------------------------
 
-TEST_CASE("runtime Program mutable instructions accessor allows instruction modification") {
+TEST_CASE("runtime Program mutable instructions accessor allows instruction "
+          "modification") {
   Program program{
       {
           Instruction{
@@ -698,32 +664,26 @@ TEST_CASE("runtime Program mutable instructions accessor allows instruction modi
       0,
   };
 
-  program.instructions()[0].constant =
-      99.0F;
+  program.instructions()[0].constant = 99.0F;
 
-  REQUIRE(
-      program.instructions()[0].constant ==
-      99.0F);
+  REQUIRE(program.instructions()[0].constant == 99.0F);
 }
 
-TEST_CASE("runtime Program mutable instructions accessor allows appending instruction") {
+TEST_CASE("runtime Program mutable instructions accessor allows appending "
+          "instruction") {
   Program program;
 
-  auto &instructions =
-      program.instructions();
+  auto &instructions = program.instructions();
 
-  instructions.push_back(
-      Instruction{
-          .opcode = Opcode::Constant,
-          .scalar_dst = ScalarId{0},
-          .constant = 7.0F,
-      });
+  instructions.push_back(Instruction{
+      .opcode = Opcode::Constant,
+      .scalar_dst = ScalarId{0},
+      .constant = 7.0F,
+  });
 
   REQUIRE(program.instructions().size() == 1);
 
-  REQUIRE(
-      program.instructions()[0].constant ==
-      7.0F);
+  REQUIRE(program.instructions()[0].constant == 7.0F);
 }
 
 // -----------------------------------------------------------------------------
@@ -740,7 +700,7 @@ TEST_CASE("runtime Program accessors work through const Program reference") {
           },
       },
       {
-          SlotId{0},
+          ValueIdSlotIdInput{ValueId{10}, SlotId{0}},
       },
       {
           SlotId{1},
@@ -761,39 +721,21 @@ TEST_CASE("runtime Program accessors work through const Program reference") {
       2,
   };
 
-  const Program &const_program =
-      program;
+  const Program &const_program = program;
 
-  REQUIRE(
-      const_program.instructions().size() ==
-      1);
+  REQUIRE(const_program.instructions().size() == 1);
 
-  REQUIRE(
-      const_program.inputs().size() ==
-      1);
+  REQUIRE(const_program.inputs().size() == 1);
 
-  REQUIRE(
-      const_program.outputs().size() ==
-      1);
+  REQUIRE(const_program.outputs().size() == 1);
 
-  REQUIRE(
-      const_program.slots_count() ==
-      2);
+  REQUIRE(const_program.slots_count() == 2);
 
-  REQUIRE(
-      const_program.scalar_count() ==
-      1);
+  REQUIRE(const_program.scalar_count() == 1);
 
-  REQUIRE(
-      const_program.index_count() ==
-      2);
+  REQUIRE(const_program.index_count() == 2);
 
-  REQUIRE(
-      const_program
-              .tensor_meta_by_slot(
-                  SlotId{0})
-              .shape ==
-      Shape{2});
+  REQUIRE(const_program.tensor_meta_by_slot(SlotId{0}).shape == Shape{2});
 }
 
 // -----------------------------------------------------------------------------
@@ -807,8 +749,7 @@ TEST_CASE("runtime Program stores complete execution metadata independently") {
       .buffer = SlotId{0},
       .offset =
           IndexOperand{
-              .kind =
-                  IndexOperand::Kind::Constant,
+              .kind = IndexOperand::Kind::Constant,
               .constant = 0,
           },
   };
@@ -818,7 +759,7 @@ TEST_CASE("runtime Program stores complete execution metadata independently") {
           instruction,
       },
       {
-          SlotId{0},
+          ValueIdSlotIdInput{ValueId{10}, SlotId{0}},
       },
       {
           SlotId{1},
@@ -847,29 +788,17 @@ TEST_CASE("runtime Program stores complete execution metadata independently") {
   REQUIRE(program.scalar_count() == 4);
   REQUIRE(program.index_count() == 3);
 
-  REQUIRE(
-      program.instructions()[0].opcode ==
-      Opcode::Load);
+  REQUIRE(program.instructions()[0].opcode == Opcode::Load);
 
-  REQUIRE(
-      program.inputs()[0] ==
-      SlotId{0});
+  REQUIRE(program.inputs()[0].slot_id == SlotId{0});
 
-  REQUIRE(
-      program.outputs()[0] ==
-      SlotId{1});
+  REQUIRE(program.inputs()[0].value_id == ValueId{10});
 
-  REQUIRE(
-      program
-              .tensor_meta_by_slot(
-                  SlotId{0})
-              .shape ==
-      Shape{2, 3});
+  REQUIRE(program.get_slotid_from_valueid(ValueId{10}) == SlotId{0});
 
-  REQUIRE(
-      program
-              .tensor_meta_by_slot(
-                  SlotId{1})
-              .shape ==
-      Shape{2, 3});
+  REQUIRE(program.outputs()[0] == SlotId{1});
+
+  REQUIRE(program.tensor_meta_by_slot(SlotId{0}).shape == Shape{2, 3});
+
+  REQUIRE(program.tensor_meta_by_slot(SlotId{1}).shape == Shape{2, 3});
 }
