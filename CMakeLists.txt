@@ -36,12 +36,16 @@ add_library(tcr STATIC
     src/reference/ops.cpp
 
     src/compiler/compiler.cpp
+    src/compiler/lowering.cpp
+    src/compiler/program_emitter.cpp
 
     src/runtime/tensor.cpp
     src/runtime/bindings.cpp
     src/runtime/program.cpp
-    src/runtime/ops.cpp
     src/runtime/vm.cpp
+
+    src/lir/instruction.cpp
+    src/lir/program.cpp
 )
 
 # add headers to the main code lib
@@ -60,7 +64,6 @@ add_executable(tcr_tests tests/ir/test_types.cpp
                          tests/reference/test_bindings.cpp
                          tests/reference/test_tensor.cpp
                          tests/runtime/test_bindings.cpp
-                         tests/runtime/test_ops.cpp
                          tests/runtime/test_program.cpp
                          tests/runtime/test_tensor.cpp
                          tests/runtime/test_vm.cpp
