@@ -2659,3 +2659,150 @@ TEST_CASE("VM executes two independent outputs") {
   // Sum second.
   REQUIRE(outputs[1].load(0) == 8.0F);
 }
+
+TEST_CASE("VM rejects Store to input slot without mutating binding") {
+  const tcr::runtime::SlotId input_slot{0};
+  const tcr::runtime::ScalarId scalar{0};
+
+  std::vector<tcr::runtime::Instruction> instructions;
+
+  tcr::runtime::Instruction constant{};
+  constant.opcode = tcr::runtime::Opcode::Constant;
+  constant.scalar_dst = scalar;
+  constant.constant = 99.0F;
+  instructions.push_back(constant);
+
+  tcr::runtime::Instruction store{};
+  store.opcode = tcr::runtime::Opcode::Store;
+  store.scalar_lhs = scalar;
+  store.buffer = input_slot;
+  store.offset = constant_index(0);
+  instructions.push_back(store);
+
+  std::vector<tcr::runtime::ValueIdSlotIdInput> inputs{
+      tcr::runtime::ValueIdSlotIdInput{
+          tcr::ir::ValueId{0},
+          input_slot,
+      },
+  };
+
+  std::vector<tcr::runtime::SlotId> outputs;
+
+  std::vector<tcr::runtime::SlotTensorInfo> slots{
+      tcr::runtime::SlotTensorInfo{
+          input_slot,
+          Shape{3},
+          Dtype::F32,
+      },
+  };
+
+  tcr::runtime::Program program{
+      std::move(instructions),
+      std::move(inputs),
+      std::move(outputs),
+      std::move(slots),
+      1, // scalar_count
+      0, // index_count
+  };
+
+  tcr::runtime::InputBindings bindings;
+
+  bindings.bind(input_slot, tcr::runtime::Tensor{
+                                Shape{3},
+                                Dtype::F32,
+                                {
+                                    1.0F,
+                                    2.0F,
+                                    3.0F,
+                                },
+                            });
+
+  tcr::runtime::VM vm;
+
+  REQUIRE_THROWS_AS(vm.run(program, bindings), std::logic_error);
+
+  REQUIRE(bindings.get(input_slot).data() == std::vector<float>{
+                                                 1.0F,
+                                                 2.0F,
+                                                 3.0F,
+                                             });
+}
+
+TEST_CASE("VM rejects overflowing IndexAdd") {
+  tcr::runtime::Instruction add{};
+  add.opcode = tcr::runtime::Opcode::IndexAdd;
+  add.index_dst = tcr::runtime::IndexId{0};
+  add.index_lhs = constant_index(std::numeric_limits<std::size_t>::max());
+  add.index_rhs = constant_index(1);
+
+  tcr::runtime::Program program{
+      {add}, // instructions
+      {},    // inputs
+      {},    // outputs
+      {},    // slots
+      0,     // scalar_count
+      1,     // index_count
+  };
+
+  tcr::runtime::InputBindings bindings;
+  tcr::runtime::VM vm;
+
+  REQUIRE_THROWS_AS(vm.run(program, bindings), std::overflow_error);
+}
+TEST_CASE("VM rejects overflowing IndexMul") {
+  tcr::runtime::Instruction mul{};
+  mul.opcode = tcr::runtime::Opcode::IndexMul;
+  mul.index_dst = tcr::runtime::IndexId{0};
+  mul.index_lhs = constant_index(std::numeric_limits<std::size_t>::max());
+  mul.index_rhs = constant_index(2);
+
+  tcr::runtime::Program program{
+      {mul}, {}, {}, {},
+      0, // scalar_count
+      1, // index_count
+  };
+
+  tcr::runtime::InputBindings bindings;
+  tcr::runtime::VM vm;
+
+  REQUIRE_THROWS_AS(vm.run(program, bindings), std::overflow_error);
+}
+
+TEST_CASE("VM rejects overflowing loop index increment") {
+  const auto max = std::numeric_limits<std::size_t>::max();
+
+  // First put SIZE_T_MAX into index register 0.
+  tcr::runtime::Instruction set_index{};
+  set_index.opcode = tcr::runtime::Opcode::IndexAdd;
+  set_index.index_dst = tcr::runtime::IndexId{0};
+  set_index.index_lhs = constant_index(max);
+  set_index.index_rhs = constant_index(0);
+
+  // LoopEnd attempts:
+  //
+  //   SIZE_T_MAX + 1
+  //
+  // which must throw instead of wrapping to 0.
+  tcr::runtime::Instruction loop_end{};
+  loop_end.opcode = tcr::runtime::Opcode::LoopEnd;
+  loop_end.loop_index = tcr::runtime::IndexId{0};
+  loop_end.loop_end = constant_index(max);
+  loop_end.jump = 0;
+
+  tcr::runtime::Program program{
+      {
+          set_index,
+          loop_end,
+      },
+      {},
+      {},
+      {},
+      0, // scalar_count
+      1, // index_count
+  };
+
+  tcr::runtime::InputBindings bindings;
+  tcr::runtime::VM vm;
+
+  REQUIRE_THROWS_AS(vm.run(program, bindings), std::overflow_error);
+}

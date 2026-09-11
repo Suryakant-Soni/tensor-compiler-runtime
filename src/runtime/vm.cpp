@@ -3,12 +3,28 @@
 #include "tcr/runtime/slot_id.hpp"
 #include "tcr/runtime/tensor.hpp"
 #include <cstddef>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <utility>
 #include <vector>
 
 namespace tcr::runtime {
+namespace {
+std::size_t checked_add(std::size_t lhs, std::size_t rhs) {
+  if (lhs > std::numeric_limits<std::size_t>::max() - rhs) {
+    throw std::overflow_error("runtime index addition overflow error");
+  }
+  return lhs + rhs;
+}
+
+std::size_t checked_mul(std::size_t lhs, std::size_t rhs) {
+  if (rhs != 0 && lhs > std::numeric_limits<std::size_t>::max() / rhs) {
+    throw std::overflow_error("runtime index multiplication overflow error");
+  }
+  return lhs * rhs;
+}
+}; // namespace
 using tcr::runtime::Opcode;
 namespace {
 
@@ -63,7 +79,20 @@ std::vector<Tensor> VM::run(const runtime::Program &rt_program,
     if (value_slot_id.slot_id.value >= slots.size()) {
       throw std::logic_error("runtime slot id out of range");
     }
-    slots[value_slot_id.slot_id.value] = bindings.get(value_slot_id.slot_id);
+    const auto &actual_tensor = bindings.get(value_slot_id.slot_id);
+
+    const auto &expected_metadata =
+        rt_program.tensor_meta_by_slot(value_slot_id.slot_id);
+
+    if (actual_tensor.shape() != expected_metadata.shape) {
+      throw std::invalid_argument(
+          "input tensor shape does not match program input");
+    }
+    if (actual_tensor.dtype() != expected_metadata.dtype) {
+      throw std::invalid_argument(
+          "input tensor dtype does not match program input");
+    }
+    slots[value_slot_id.slot_id.value] = actual_tensor;
   }
 
   // populate tensor for non-input slots
@@ -111,6 +140,9 @@ std::vector<Tensor> VM::run(const runtime::Program &rt_program,
         throw std::logic_error(
             "given runtime scalar value position is out of range");
       }
+      if (rt_program.is_input_slot(rt_instruc.buffer)) {
+        throw std::logic_error("Store is trying to mutate input tensor");
+      }
       const auto offset =
           resolve_index_operand_value(rt_instruc.offset, indices);
       Tensor &tensor = get_slot_tensor(slots, rt_instruc.buffer);
@@ -153,9 +185,9 @@ std::vector<Tensor> VM::run(const runtime::Program &rt_program,
         throw std::logic_error("given runtime index destination value for "
                                "index-add,is out of range");
       }
-      indices[rt_instruc.index_dst.value] =
-          resolve_index_operand_value(rt_instruc.index_lhs, indices) +
-          resolve_index_operand_value(rt_instruc.index_rhs, indices);
+      indices[rt_instruc.index_dst.value] = checked_add(
+          resolve_index_operand_value(rt_instruc.index_lhs, indices),
+          resolve_index_operand_value(rt_instruc.index_rhs, indices));
       pc++;
       break;
     }
@@ -164,9 +196,9 @@ std::vector<Tensor> VM::run(const runtime::Program &rt_program,
         throw std::logic_error("given runtime index destination value for "
                                "index-mul,is out of range");
       }
-      indices[rt_instruc.index_dst.value] =
-          resolve_index_operand_value(rt_instruc.index_lhs, indices) *
-          resolve_index_operand_value(rt_instruc.index_rhs, indices);
+      indices[rt_instruc.index_dst.value] = checked_mul(
+          resolve_index_operand_value(rt_instruc.index_lhs, indices),
+          resolve_index_operand_value(rt_instruc.index_rhs, indices));
       pc++;
       break;
     }
@@ -193,7 +225,7 @@ std::vector<Tensor> VM::run(const runtime::Program &rt_program,
             "given runtime loop index is out of range for loop end");
       }
       auto &loop_index = indices[rt_instruc.loop_index.value];
-      ++loop_index;
+      loop_index = checked_add(loop_index, 1);
       const std::size_t end =
           resolve_index_operand_value(rt_instruc.loop_end, indices);
       if (loop_index < end) {

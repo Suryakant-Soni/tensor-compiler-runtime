@@ -15,6 +15,7 @@
 #include "tcr/runtime/vm.hpp"
 
 #include <cstddef>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -1746,4 +1747,139 @@ TEST_CASE("Compiler and VM preserve output ordering when output order drives "
                                           5.0F,
                                           9.0F,
                                       });
+}
+
+// =============================================================================
+// Runtime input contract validation
+// =============================================================================
+
+TEST_CASE("Compiler and VM reject a bound tensor whose shape does not match "
+          "graph input") {
+
+  Graph graph;
+
+  const auto x = graph.input(Shape{2, 3}, Dtype::F32);
+  graph.set_outputs({x});
+
+  RuntimeInputs runtime_inputs;
+
+  // The graph declares x as Shape{2, 3}, but the actual bound tensor is
+  // Shape{6}.
+  runtime_inputs.push_back(RuntimeInput{
+      x,
+      runtime::Tensor{
+          Shape{6},
+          Dtype::F32,
+          {
+              1.0F,
+              2.0F,
+              3.0F,
+              4.0F,
+              5.0F,
+              6.0F,
+          },
+      },
+  });
+
+  REQUIRE_THROWS_AS(compile_and_run(graph, runtime_inputs),
+                    std::invalid_argument);
+}
+
+TEST_CASE("Compiler and VM reject wrong input shape even when element count "
+          "matches") {
+
+  Graph graph;
+
+  const auto x = graph.input(Shape{2, 3}, Dtype::F32);
+  const auto y = graph.input(Shape{2, 3}, Dtype::F32);
+
+  const auto out = graph.add(x, y);
+  graph.set_outputs({out});
+
+  RuntimeInputs runtime_inputs;
+
+  runtime_inputs.push_back(RuntimeInput{
+      x,
+      runtime::Tensor{
+          Shape{2, 3},
+          Dtype::F32,
+          {
+              1.0F,
+              2.0F,
+              3.0F,
+              4.0F,
+              5.0F,
+              6.0F,
+          },
+      },
+  });
+
+  // Same element count as Shape{2, 3}, but a different shape.
+  runtime_inputs.push_back(RuntimeInput{
+      y,
+      runtime::Tensor{
+          Shape{3, 2},
+          Dtype::F32,
+          {
+              10.0F,
+              20.0F,
+              30.0F,
+              40.0F,
+              50.0F,
+              60.0F,
+          },
+      },
+  });
+
+  REQUIRE_THROWS_AS(compile_and_run(graph, runtime_inputs),
+                    std::invalid_argument);
+}
+
+TEST_CASE(
+    "Compiler and VM validate input shape after ValueId to SlotId mapping") {
+
+  Graph graph;
+
+  const auto x = graph.input(Shape{3}, Dtype::F32);
+  const auto y = graph.input(Shape{3}, Dtype::F32);
+  const auto z = graph.input(Shape{3}, Dtype::F32);
+
+  const auto product = graph.mul(x, y);
+  const auto out = graph.add(product, z);
+
+  graph.set_outputs({out});
+
+  RuntimeInputs runtime_inputs;
+
+  runtime_inputs.push_back(RuntimeInput{
+      x,
+      runtime::Tensor{
+          Shape{3},
+          Dtype::F32,
+          {1.0F, 2.0F, 3.0F},
+      },
+  });
+
+  runtime_inputs.push_back(RuntimeInput{
+      y,
+      runtime::Tensor{
+          Shape{3},
+          Dtype::F32,
+          {4.0F, 5.0F, 6.0F},
+      },
+  });
+
+  // z's runtime slot is determined only after compilation. The caller still
+  // binds by ValueId, and VM validation must reject the mismatched shape.
+  runtime_inputs.push_back(RuntimeInput{
+      z,
+      runtime::Tensor{
+          Shape{1, 3},
+          Dtype::F32,
+          {10.0F, 20.0F, 30.0F},
+      },
+  });
+
+  REQUIRE_THROWS_AS(compile_and_run(graph, runtime_inputs),
+                    std::invalid_argument);
 }

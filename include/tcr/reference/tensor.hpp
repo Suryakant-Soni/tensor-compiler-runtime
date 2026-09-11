@@ -17,8 +17,8 @@ public:
   // it doesnt hit perf
   Dtype dtype() const;
 
-  //constness overloading/redeclaration for fetching data_
-  const std::vector<float>& data() const;
+  // constness overloading/redeclaration for fetching data_
+  const std::vector<float> &data() const;
 
 private:
   Shape shape_;

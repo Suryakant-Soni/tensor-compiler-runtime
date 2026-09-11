@@ -52,4 +52,12 @@ SlotId Program::get_slotid_from_valueid(ir::ValueId value_id) const {
   throw std::logic_error("valueid and slotid mapping not found");
 }
 
+bool Program::is_input_slot(SlotId input) const {
+  for (const auto &slot : inputs_) {
+    if (slot.slot_id == input) {
+      return true;
+    }
+  }
+  return false;
+}
 } // namespace tcr::runtime

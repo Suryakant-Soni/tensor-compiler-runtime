@@ -54,6 +54,7 @@ public:
   std::size_t index_count() const;
   const SlotTensorInfo &tensor_meta_by_slot(SlotId slot_id) const;
   SlotId get_slotid_from_valueid(ir::ValueId value_id) const;
+  bool is_input_slot(SlotId input) const;
 
 private:
   std::vector<Instruction> instructions_;
