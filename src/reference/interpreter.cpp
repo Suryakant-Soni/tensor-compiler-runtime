@@ -2,6 +2,7 @@
 #include "tcr/ir/graph.hpp"
 #include "tcr/ir/ids.hpp"
 #include "tcr/ir/nodes.hpp"
+#include "tcr/ir/op.hpp"
 #include "tcr/reference/bindings.hpp"
 #include "tcr/reference/ops.hpp"
 #include "tcr/reference/tensor.hpp"
@@ -52,6 +53,8 @@ Tensor Interpreter::eval(const Graph &graph, ValueId output_id,
     break;
   case ir::Op::Input:
     throw std::logic_error("input should not have any producer");
+  case ir::Op::FusedElementwise:
+    throw std::logic_error("High Ir reference graph does not use fusion nodes");
   }
   if (!result.has_value()) {
     throw std::logic_error("unsupported reference interpreter operation");

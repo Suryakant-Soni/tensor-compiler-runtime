@@ -15,6 +15,8 @@ std::string_view to_string(Op operation) {
     return "MatMul";
   case Op::Sum:
     return "Sum";
+  case Op::FusedElementwise:
+    return "FusedElementwise";
   default:
     assert(false && "unhandled Operation in to_string");
     return "Unknown";

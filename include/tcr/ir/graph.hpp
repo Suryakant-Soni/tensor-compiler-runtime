@@ -18,6 +18,8 @@ public:
   ValueId mul(ValueId a, ValueId b);
   ValueId matmul(ValueId a, ValueId b);
   ValueId sum(ValueId input);
+  ValueId fused_elementwise(const std::vector<ValueId> fused_node_inputs,
+                            ElementwiseExpr expr);
 
   // mark final output for graph result
   void set_outputs(std::vector<ValueId> outputs);
@@ -27,8 +29,8 @@ public:
   const Value &value(ValueId id) const;
   const Node &node(NodeId id) const;
 
-  const std::vector<ValueId>& inputs() const;
-  const std::vector<ValueId>& outputs() const;
+  const std::vector<ValueId> &inputs() const;
+  const std::vector<ValueId> &outputs() const;
   std::size_t nodes_count() const;
   std::size_t values_count() const;
   std::size_t inputs_count() const;

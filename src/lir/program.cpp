@@ -45,7 +45,7 @@ const std::vector<Instruction> &Program::instructions() const {
 }
 
 std::size_t Program::scalar_count() const { return next_scalar_; }
-std::size_t Program::buffer_count() const { return buffer_.size(); };
+std::size_t Program::buffer_count() const { return buffer_.size(); }
 std::size_t Program::index_count() const { return next_index_; }
 
 } // namespace tcr::lir

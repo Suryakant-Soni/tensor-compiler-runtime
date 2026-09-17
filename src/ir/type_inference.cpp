@@ -1,9 +1,12 @@
 #include "tcr/ir/type_inference.hpp"
+#include <cstddef>
 #include <stdexcept>
 namespace tcr::ir {
 
 InferredType infer_type(Op op, const std::vector<const Value *> &inputs) {
-
+  if (inputs.empty()) {
+    throw std::invalid_argument("no input supplied in param");
+  }
   switch (op) {
   case Op::Add:
     if (inputs.size() != 2) {
@@ -70,6 +73,21 @@ InferredType infer_type(Op op, const std::vector<const Value *> &inputs) {
         Shape{},
         inputs[0]->dtype,
     };
+  case Op::FusedElementwise: {
+    const auto &first_shape = inputs[0]->shape;
+    const auto &first_dtype = inputs[0]->dtype;
+    for (std::size_t i = 1; i < inputs.size(); ++i) {
+      if (first_shape != inputs[i]->shape || first_dtype != inputs[i]->dtype) {
+        throw std::invalid_argument(
+            "shape and dtype metadata should be same for all "
+            "inputs to fused node");
+      }
+    }
+    return InferredType{
+        .dtype = first_dtype,
+        .shape = first_shape,
+    };
+  }
   default:
     throw std::logic_error("unsupported operation type");
   }

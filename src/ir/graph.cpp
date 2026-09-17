@@ -149,6 +149,32 @@ ValueId Graph::sum(ValueId input) {
   return value_id;
 }
 
+ValueId Graph::fused_elementwise(const std::vector<ValueId> fused_node_inputs,
+                                 ElementwiseExpr expr) {
+  // check if kind in not input
+  if (expr.kind == ElementwiseExprKind::Input) {
+    throw std::logic_error("fused node's input expresskind in Kind::Input");
+  }
+  if (fused_node_inputs.empty()) {
+    throw std::logic_error("no input supplied for creation of the fused node");
+  }
+  std::vector<const Value *> input_values;
+  input_values.reserve(fused_node_inputs.size());
+  for (const auto &input : fused_node_inputs) {
+    input_values.push_back(&value(input));
+  }
+  const auto inferred = infer_type(Op::FusedElementwise, input_values);
+  NodeId nodeid{static_cast<int32_t>(nodes_.size())};
+  nodes_.push_back(Node{
+      .elementwise_expr = std::optional<ElementwiseExpr>{std::move(expr)},
+      .inputs = fused_node_inputs,
+      .op = Op::FusedElementwise,
+  });
+  ValueId value_id{static_cast<int32_t>(values_.size())};
+  values_.push_back(Value{.shape = inferred.shape, .dtype = inferred.dtype});
+  return value_id;
+}
+
 void Graph::set_outputs(std::vector<ValueId> outputs) {
   for (ValueId id : outputs) {
     validate_value_id(id);
