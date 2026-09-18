@@ -173,7 +173,7 @@ ValueId Graph::fused_elementwise(const std::vector<ValueId> fused_node_inputs,
   nodes_.push_back(std::move(new_node));
   ValueId value_id{static_cast<int32_t>(values_.size())};
   values_.push_back(Value{
-      .producer = nodeid, .shape = inferred.shape, .dtype = inferred.dtype});
+      .shape = inferred.shape, .dtype = inferred.dtype, .producer = nodeid});
   return value_id;
 }
 

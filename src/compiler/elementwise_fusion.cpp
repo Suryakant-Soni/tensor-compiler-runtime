@@ -61,14 +61,14 @@ ir::ValueId recreate_node(const ir::Node &old_node, ir::Graph &new_graph,
     throw std::logic_error(
         "FusedElementwise node already present wrongly; before fusion");
   }
+  throw std::logic_error("unsupported operation while recreating node");
 }
 
 // -----------------------------------------------------------------------------
 // prepare input kind elementwise expression for the new fused node
 // ------------------------------------------------------------------------------
-const ir::ElementwiseExpr
-make_fusion_boundary_input(const ir::ValueId &old_valueid,
-                           FusionCandidate &candidate) {
+ir::ElementwiseExpr make_fusion_boundary_input(const ir::ValueId &old_valueid,
+                                               FusionCandidate &candidate) {
 
   const auto index = candidate.boundary_inputs.size();
   candidate.boundary_inputs.push_back(old_valueid);
@@ -80,11 +80,10 @@ make_fusion_boundary_input(const ir::ValueId &old_valueid,
   };
 }
 
-const ir::ElementwiseExpr
-build_fusion_expr(ir::ValueId v, const ir::Graph &old_graph,
-                  const std::vector<std::size_t> &use_count,
-                  const std::vector<bool> &is_output,
-                  FusionCandidate &candidate) {
+ir::ElementwiseExpr build_fusion_expr(ir::ValueId v, const ir::Graph &old_graph,
+                                      const std::vector<std::size_t> &use_count,
+                                      const std::vector<bool> &is_output,
+                                      FusionCandidate &candidate) {
   const auto &value = old_graph.value(v);
 
   // -----------------------------------------------------------------------------
@@ -163,7 +162,8 @@ ir::ValueId rewrite_value(const ir::ValueId old_v, const ir::Graph &old_graph,
   // all external inputs to new graph
   // ------------------------------------------------------------------------------
   if (!output_value.producer.has_value()) {
-    throw std::logic_error("graph input should already be present in the remap");
+    throw std::logic_error(
+        "graph input should already be present in the remap");
   }
 
   const auto &node = old_graph.node(*output_value.producer);
@@ -267,15 +267,16 @@ inputs          ↓
         create FusedElementwise
  */
 
-const ir::Graph ElementwiseFusion::run(const ir::Graph &old_graph) const {
+ir::Graph ElementwiseFusion::run(const ir::Graph &old_graph) const {
 
   // -----------------------------------------------------------------------------
   // to validate if there is only single consumer for a value for it to be
   // fusible; index-> valueid and value - count total
   // ------------------------------------------------------------------------------
   std::vector<std::size_t> use_count(old_graph.values_count(), 0);
-  for (std::int32_t i = 0; i < old_graph.nodes_count(); ++i) {
-    const auto &inputs = old_graph.node(ir::NodeId{i}).inputs;
+  for (std::size_t i = 0; i < old_graph.nodes_count(); ++i) {
+    const auto &inputs =
+        old_graph.node(ir::NodeId{static_cast<std::int32_t>(i)}).inputs;
     for (const auto &input : inputs) {
       ++use_count[input.value];
     }

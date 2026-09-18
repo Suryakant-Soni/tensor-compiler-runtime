@@ -750,17 +750,14 @@ TEST_CASE("Compiler MatMul maps loads and output store to correct slots") {
 // Dependency chain
 // =============================================================================
 
-TEST_CASE("Compiler preserves dependency order across multiple operations") {
+TEST_CASE("Compiler fuses single-use elementwise dependency chain") {
   Graph graph;
 
   const auto x = graph.input(Shape{3}, Dtype::F32);
-
   const auto y = graph.input(Shape{3}, Dtype::F32);
-
   const auto z = graph.input(Shape{3}, Dtype::F32);
 
   const auto product = graph.mul(x, y);
-
   const auto out = graph.add(product, z);
 
   graph.set_outputs({out});
@@ -768,28 +765,66 @@ TEST_CASE("Compiler preserves dependency order across multiple operations") {
   Compiler compiler;
   const auto program = compiler.compile(graph);
 
-  // x, y, product, z, out
-  REQUIRE(program.slots_count() == 5);
+  // Fusion removes the materialized product buffer.
+  //
+  // Current fused lowering allocates the fused output buffer before lowering
+  // its boundary inputs:
+  //
+  // slot 0 = fused output
+  // slot 1 = x
+  // slot 2 = y
+  // slot 3 = z
+  REQUIRE(program.slots_count() == 4);
 
   REQUIRE(program.inputs().size() == 3);
-  REQUIRE(program.get_slotid_from_valueid(x) == SlotId{0});
-  REQUIRE(program.get_slotid_from_valueid(y) == SlotId{1});
+  REQUIRE(program.get_slotid_from_valueid(x) == SlotId{1});
+  REQUIRE(program.get_slotid_from_valueid(y) == SlotId{2});
   REQUIRE(program.get_slotid_from_valueid(z) == SlotId{3});
 
-  // Mul loop + Add loop.
-  REQUIRE(program.instructions().size() == 12);
+  REQUIRE(program.outputs().size() == 1);
+  REQUIRE(program.outputs()[0] == SlotId{0});
 
-  REQUIRE(program.instructions()[3].opcode == Opcode::Mul);
+  REQUIRE(program.scalar_count() == 5);
+  REQUIRE(program.index_count() == 1);
 
-  REQUIRE(program.instructions()[9].opcode == Opcode::Add);
+  /*
+   * One fused loop:
+   *
+   * 0 LoopBegin
+   * 1 Load x
+   * 2 Load y
+   * 3 Load z
+   * 4 Mul
+   * 5 Add
+   * 6 Store
+   * 7 LoopEnd
+   */
+  REQUIRE(program.instructions().size() == 8);
 
-  // First loop stores product into slot 2.
-  REQUIRE(program.instructions()[4].buffer == SlotId{2});
+  REQUIRE(program.instructions()[0].opcode == Opcode::LoopBegin);
+  REQUIRE(program.instructions()[1].opcode == Opcode::Load);
+  REQUIRE(program.instructions()[2].opcode == Opcode::Load);
+  REQUIRE(program.instructions()[3].opcode == Opcode::Load);
+  REQUIRE(program.instructions()[4].opcode == Opcode::Mul);
+  REQUIRE(program.instructions()[5].opcode == Opcode::Add);
+  REQUIRE(program.instructions()[6].opcode == Opcode::Store);
+  REQUIRE(program.instructions()[7].opcode == Opcode::LoopEnd);
 
-  // Second loop consumes product from slot 2.
-  REQUIRE(program.instructions()[7].buffer == SlotId{2});
+  REQUIRE(program.instructions()[1].buffer == SlotId{1});
+  REQUIRE(program.instructions()[2].buffer == SlotId{2});
+  REQUIRE(program.instructions()[3].buffer == SlotId{3});
+  REQUIRE(program.instructions()[6].buffer == SlotId{0});
 
-  REQUIRE(program.outputs()[0] == SlotId{4});
+  // The fused expression computes Add(Mul(x, y), z).
+  REQUIRE(program.instructions()[4].scalar_lhs.value == 0);
+  REQUIRE(program.instructions()[4].scalar_rhs.value == 1);
+  REQUIRE(program.instructions()[4].scalar_dst.value == 3);
+
+  REQUIRE(program.instructions()[5].scalar_lhs.value == 3);
+  REQUIRE(program.instructions()[5].scalar_rhs.value == 2);
+  REQUIRE(program.instructions()[5].scalar_dst.value == 4);
+
+  REQUIRE(program.instructions()[6].scalar_lhs.value == 4);
 }
 
 // =============================================================================
@@ -831,21 +866,16 @@ TEST_CASE("Compiler compiles shared producer exactly once") {
 }
 
 TEST_CASE(
-    "Compiler compiles diamond graph without duplicating shared producer") {
+    "Compiler materializes shared producer once and fuses diamond consumers") {
   Graph graph;
 
   const auto x = graph.input(Shape{2}, Dtype::F32);
-
   const auto y = graph.input(Shape{2}, Dtype::F32);
-
   const auto z = graph.input(Shape{2}, Dtype::F32);
 
   const auto shared = graph.mul(x, y);
-
   const auto left = graph.add(shared, z);
-
   const auto right = graph.mul(shared, z);
-
   const auto out = graph.add(left, right);
 
   graph.set_outputs({out});
@@ -853,21 +883,61 @@ TEST_CASE(
   Compiler compiler;
   const auto program = compiler.compile(graph);
 
-  // x, y, shared, z, left, right, out.
-  REQUIRE(program.slots_count() == 7);
+  // shared has two consumers, so it remains materialized.
+  // left and right are single-use and are absorbed into the root fused node.
+  //
+  // slot 0 = fused output
+  // slot 1 = x
+  // slot 2 = y
+  // slot 3 = shared
+  // slot 4 = z
+  REQUIRE(program.slots_count() == 5);
 
-  // Four elementwise operations * six flat instructions.
-  REQUIRE(program.instructions().size() == 24);
+  REQUIRE(program.inputs().size() == 3);
+  REQUIRE(program.get_slotid_from_valueid(x) == SlotId{1});
+  REQUIRE(program.get_slotid_from_valueid(y) == SlotId{2});
+  REQUIRE(program.get_slotid_from_valueid(z) == SlotId{4});
 
+  REQUIRE(program.outputs().size() == 1);
+  REQUIRE(program.outputs()[0] == SlotId{0});
+
+  // One normal Mul loop for shared + one fused loop for the diamond consumers.
+  REQUIRE(program.instructions().size() == 16);
+
+  // shared = x * y
+  REQUIRE(program.instructions()[0].opcode == Opcode::LoopBegin);
+  REQUIRE(program.instructions()[1].opcode == Opcode::Load);
+  REQUIRE(program.instructions()[2].opcode == Opcode::Load);
   REQUIRE(program.instructions()[3].opcode == Opcode::Mul);
+  REQUIRE(program.instructions()[4].opcode == Opcode::Store);
+  REQUIRE(program.instructions()[5].opcode == Opcode::LoopEnd);
 
-  REQUIRE(program.instructions()[9].opcode == Opcode::Add);
+  REQUIRE(program.instructions()[4].buffer == SlotId{3});
 
-  REQUIRE(program.instructions()[15].opcode == Opcode::Mul);
+  // Fused root:
+  // Add(Add(shared, z), Mul(shared, z))
+  REQUIRE(program.instructions()[6].opcode == Opcode::LoopBegin);
 
-  REQUIRE(program.instructions()[21].opcode == Opcode::Add);
+  REQUIRE(program.instructions()[7].opcode == Opcode::Load);
+  REQUIRE(program.instructions()[7].buffer == SlotId{3});
 
-  REQUIRE(program.outputs()[0] == SlotId{6});
+  REQUIRE(program.instructions()[8].opcode == Opcode::Load);
+  REQUIRE(program.instructions()[8].buffer == SlotId{4});
+
+  REQUIRE(program.instructions()[9].opcode == Opcode::Load);
+  REQUIRE(program.instructions()[9].buffer == SlotId{3});
+
+  REQUIRE(program.instructions()[10].opcode == Opcode::Load);
+  REQUIRE(program.instructions()[10].buffer == SlotId{4});
+
+  REQUIRE(program.instructions()[11].opcode == Opcode::Add);
+  REQUIRE(program.instructions()[12].opcode == Opcode::Mul);
+  REQUIRE(program.instructions()[13].opcode == Opcode::Add);
+
+  REQUIRE(program.instructions()[14].opcode == Opcode::Store);
+  REQUIRE(program.instructions()[14].buffer == SlotId{0});
+
+  REQUIRE(program.instructions()[15].opcode == Opcode::LoopEnd);
 }
 
 // =============================================================================
@@ -1098,20 +1168,15 @@ TEST_CASE("Compiler propagates MatMul result metadata into dependent Add") {
 // Longer mixed dependency chain
 // =============================================================================
 
-TEST_CASE(
-    "Compiler compiles longer mixed graph into correct runtime structure") {
+TEST_CASE("Compiler fuses longer elementwise chain before reduction") {
   Graph graph;
 
   const auto x = graph.input(Shape{4}, Dtype::F32);
-
   const auto y = graph.input(Shape{4}, Dtype::F32);
 
   const auto a = graph.mul(x, y);
-
   const auto b = graph.add(a, x);
-
   const auto c = graph.mul(b, y);
-
   const auto out = graph.sum(c);
 
   graph.set_outputs({out});
@@ -1119,34 +1184,70 @@ TEST_CASE(
   Compiler compiler;
   const auto program = compiler.compile(graph);
 
-  // x, y, a, b, c, scalar output.
-  REQUIRE(program.slots_count() == 6);
+  // a, b and c become one fused elementwise value.
+  //
+  // slot 0 = fused c
+  // slot 1 = x
+  // slot 2 = y
+  // slot 3 = scalar Sum output
+  REQUIRE(program.slots_count() == 4);
+
+  REQUIRE(program.inputs().size() == 2);
+  REQUIRE(program.get_slotid_from_valueid(x) == SlotId{1});
+  REQUIRE(program.get_slotid_from_valueid(y) == SlotId{2});
+
+  REQUIRE(program.outputs().size() == 1);
+  REQUIRE(program.outputs()[0] == SlotId{3});
+
+  REQUIRE(program.tensor_meta_by_slot(SlotId{0}).shape == Shape{4});
+  REQUIRE(program.tensor_meta_by_slot(SlotId{3}).shape == Shape{});
 
   /*
-   * Mul = 6
-   * Add = 6
-   * Mul = 6
-   * Sum = 6
+   * Fused loop = 10 runtime instructions:
+   *
+   * LoopBegin
+   * Load x
+   * Load y
+   * Load x
+   * Load y
+   * Mul
+   * Add
+   * Mul
+   * Store
+   * LoopEnd
+   *
+   * Sum = 6 runtime instructions:
+   *
+   * Constant
+   * LoopBegin
+   * Load
+   * Add
+   * LoopEnd
+   * Store
    */
-  REQUIRE(program.instructions().size() == 24);
+  REQUIRE(program.instructions().size() == 16);
 
-  REQUIRE(program.instructions()[3].opcode == Opcode::Mul);
+  REQUIRE(program.instructions()[0].opcode == Opcode::LoopBegin);
+  REQUIRE(program.instructions()[1].opcode == Opcode::Load);
+  REQUIRE(program.instructions()[2].opcode == Opcode::Load);
+  REQUIRE(program.instructions()[3].opcode == Opcode::Load);
+  REQUIRE(program.instructions()[4].opcode == Opcode::Load);
+  REQUIRE(program.instructions()[5].opcode == Opcode::Mul);
+  REQUIRE(program.instructions()[6].opcode == Opcode::Add);
+  REQUIRE(program.instructions()[7].opcode == Opcode::Mul);
+  REQUIRE(program.instructions()[8].opcode == Opcode::Store);
+  REQUIRE(program.instructions()[9].opcode == Opcode::LoopEnd);
 
-  REQUIRE(program.instructions()[9].opcode == Opcode::Add);
+  REQUIRE(program.instructions()[8].buffer == SlotId{0});
 
-  REQUIRE(program.instructions()[15].opcode == Opcode::Mul);
-
-  REQUIRE(program.instructions()[18].opcode == Opcode::Constant);
-
-  REQUIRE(program.instructions()[19].opcode == Opcode::LoopBegin);
-
-  REQUIRE(program.instructions()[21].opcode == Opcode::Add);
-
-  REQUIRE(program.instructions()[23].opcode == Opcode::Store);
-
-  REQUIRE(program.outputs()[0] == SlotId{5});
-
-  REQUIRE(program.tensor_meta_by_slot(SlotId{5}).shape == Shape{});
+  REQUIRE(program.instructions()[10].opcode == Opcode::Constant);
+  REQUIRE(program.instructions()[11].opcode == Opcode::LoopBegin);
+  REQUIRE(program.instructions()[12].opcode == Opcode::Load);
+  REQUIRE(program.instructions()[12].buffer == SlotId{0});
+  REQUIRE(program.instructions()[13].opcode == Opcode::Add);
+  REQUIRE(program.instructions()[14].opcode == Opcode::LoopEnd);
+  REQUIRE(program.instructions()[15].opcode == Opcode::Store);
+  REQUIRE(program.instructions()[15].buffer == SlotId{3});
 }
 
 // =============================================================================
@@ -1157,11 +1258,9 @@ TEST_CASE("Compiler runtime slot metadata remains aligned with slot ids") {
   Graph graph;
 
   const auto x = graph.input(Shape{2}, Dtype::F32);
-
   const auto y = graph.input(Shape{2}, Dtype::F32);
 
   const auto a = graph.add(x, y);
-
   const auto b = graph.mul(a, x);
 
   graph.set_outputs({b});
@@ -1169,10 +1268,10 @@ TEST_CASE("Compiler runtime slot metadata remains aligned with slot ids") {
   Compiler compiler;
   const auto program = compiler.compile(graph);
 
-  REQUIRE(program.slots_count() == 4);
+  // Add is absorbed into Mul, so there is no separate buffer for a.
+  REQUIRE(program.slots_count() == 3);
 
   for (std::size_t i = 0; i < program.slots_count(); ++i) {
-
     REQUIRE(program.tensor_meta_by_slot(SlotId{i}).id == SlotId{i});
   }
 }

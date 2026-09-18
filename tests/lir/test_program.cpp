@@ -43,8 +43,7 @@ TEST_CASE("lir Program starts empty") {
 TEST_CASE("lir Program create_buffer creates first buffer with id zero") {
   Program program;
 
-  const BufferId buffer =
-      program.create_buffer(Shape{3}, Dtype::F32);
+  const BufferId buffer = program.create_buffer(Shape{3}, Dtype::F32);
 
   REQUIRE(buffer.value == 0);
 
@@ -59,14 +58,11 @@ TEST_CASE("lir Program create_buffer creates first buffer with id zero") {
 TEST_CASE("lir Program create_buffer creates sequential buffer ids") {
   Program program;
 
-  const BufferId first =
-      program.create_buffer(Shape{2}, Dtype::F32);
+  const BufferId first = program.create_buffer(Shape{2}, Dtype::F32);
 
-  const BufferId second =
-      program.create_buffer(Shape{3}, Dtype::F32);
+  const BufferId second = program.create_buffer(Shape{3}, Dtype::F32);
 
-  const BufferId third =
-      program.create_buffer(Shape{4}, Dtype::F32);
+  const BufferId third = program.create_buffer(Shape{4}, Dtype::F32);
 
   REQUIRE(first.value == 0);
   REQUIRE(second.value == 1);
@@ -78,17 +74,11 @@ TEST_CASE("lir Program create_buffer creates sequential buffer ids") {
 TEST_CASE("lir Program buffers preserve creation order") {
   Program program;
 
-  program.create_buffer(
-      Shape{2},
-      Dtype::F32);
+  program.create_buffer(Shape{2}, Dtype::F32);
 
-  program.create_buffer(
-      Shape{2, 3},
-      Dtype::F32);
+  program.create_buffer(Shape{2, 3}, Dtype::F32);
 
-  program.create_buffer(
-      Shape{},
-      Dtype::F32);
+  program.create_buffer(Shape{}, Dtype::F32);
 
   REQUIRE(program.buffers().size() == 3);
 
@@ -105,15 +95,11 @@ TEST_CASE("lir Program buffers preserve creation order") {
 TEST_CASE("lir Program create_buffer stores matrix metadata") {
   Program program;
 
-  const auto buffer =
-      program.create_buffer(
-          Shape{2, 3},
-          Dtype::F32);
+  const auto buffer = program.create_buffer(Shape{2, 3}, Dtype::F32);
 
   REQUIRE(buffer.value == 0);
 
-  const auto &stored =
-      program.buffers()[buffer.value];
+  const auto &stored = program.buffers()[buffer.value];
 
   REQUIRE(stored.id.value == 0);
   REQUIRE(stored.shape == Shape{2, 3});
@@ -125,15 +111,11 @@ TEST_CASE("lir Program create_buffer stores matrix metadata") {
 TEST_CASE("lir Program create_buffer supports scalar shape") {
   Program program;
 
-  const auto buffer =
-      program.create_buffer(
-          Shape{},
-          Dtype::F32);
+  const auto buffer = program.create_buffer(Shape{}, Dtype::F32);
 
   REQUIRE(buffer.value == 0);
 
-  const auto &stored =
-      program.buffers()[0];
+  const auto &stored = program.buffers()[0];
 
   REQUIRE(stored.shape == Shape{});
   REQUIRE(stored.shape.rank() == 0);
@@ -146,22 +128,14 @@ TEST_CASE("lir Program buffer id equals its buffers vector index") {
 
   constexpr std::size_t buffer_count = 5;
 
-  for (std::size_t i = 0;
-       i < buffer_count;
-       ++i) {
-    program.create_buffer(
-        Shape{i + 1},
-        Dtype::F32);
+  for (std::size_t i = 0; i < buffer_count; ++i) {
+    program.create_buffer(Shape{i + 1}, Dtype::F32);
   }
 
-  REQUIRE(program.buffers().size() ==
-          buffer_count);
+  REQUIRE(program.buffers().size() == buffer_count);
 
-  for (std::size_t i = 0;
-       i < program.buffers().size();
-       ++i) {
-    REQUIRE(
-        program.buffers()[i].id.value == i);
+  for (std::size_t i = 0; i < program.buffers().size(); ++i) {
+    REQUIRE(program.buffers()[i].id.value == i);
   }
 }
 
@@ -172,8 +146,7 @@ TEST_CASE("lir Program buffer id equals its buffers vector index") {
 TEST_CASE("lir Program create_scalar starts with id zero") {
   Program program;
 
-  const ScalarId scalar =
-      program.create_scalar();
+  const ScalarId scalar = program.create_scalar();
 
   REQUIRE(scalar.value == 0);
   REQUIRE(program.scalar_count() == 1);
@@ -182,14 +155,11 @@ TEST_CASE("lir Program create_scalar starts with id zero") {
 TEST_CASE("lir Program create_scalar creates sequential ids") {
   Program program;
 
-  const ScalarId first =
-      program.create_scalar();
+  const ScalarId first = program.create_scalar();
 
-  const ScalarId second =
-      program.create_scalar();
+  const ScalarId second = program.create_scalar();
 
-  const ScalarId third =
-      program.create_scalar();
+  const ScalarId third = program.create_scalar();
 
   REQUIRE(first.value == 0);
   REQUIRE(second.value == 1);
@@ -201,9 +171,7 @@ TEST_CASE("lir Program create_scalar creates sequential ids") {
 TEST_CASE("lir Program scalar count changes only when scalar is created") {
   Program program;
 
-  program.create_buffer(
-      Shape{2},
-      Dtype::F32);
+  program.create_buffer(Shape{2}, Dtype::F32);
 
   REQUIRE(program.scalar_count() == 0);
 
@@ -211,9 +179,7 @@ TEST_CASE("lir Program scalar count changes only when scalar is created") {
 
   REQUIRE(program.scalar_count() == 1);
 
-  program.create_buffer(
-      Shape{3},
-      Dtype::F32);
+  program.create_buffer(Shape{3}, Dtype::F32);
 
   REQUIRE(program.scalar_count() == 1);
 
@@ -229,8 +195,7 @@ TEST_CASE("lir Program scalar count changes only when scalar is created") {
 TEST_CASE("lir Program create_index starts with id zero") {
   Program program;
 
-  const IndexId index =
-      program.create_index();
+  const IndexId index = program.create_index();
 
   REQUIRE(index.value == 0);
   REQUIRE(program.index_count() == 1);
@@ -239,14 +204,11 @@ TEST_CASE("lir Program create_index starts with id zero") {
 TEST_CASE("lir Program create_index creates sequential ids") {
   Program program;
 
-  const IndexId first =
-      program.create_index();
+  const IndexId first = program.create_index();
 
-  const IndexId second =
-      program.create_index();
+  const IndexId second = program.create_index();
 
-  const IndexId third =
-      program.create_index();
+  const IndexId third = program.create_index();
 
   REQUIRE(first.value == 0);
   REQUIRE(second.value == 1);
@@ -258,9 +220,7 @@ TEST_CASE("lir Program create_index creates sequential ids") {
 TEST_CASE("lir Program index count changes only when index is created") {
   Program program;
 
-  program.create_buffer(
-      Shape{2},
-      Dtype::F32);
+  program.create_buffer(Shape{2}, Dtype::F32);
 
   REQUIRE(program.index_count() == 0);
 
@@ -284,17 +244,13 @@ TEST_CASE("lir Program index count changes only when index is created") {
 TEST_CASE("lir Program scalar and index ids have independent numbering") {
   Program program;
 
-  const auto scalar0 =
-      program.create_scalar();
+  const auto scalar0 = program.create_scalar();
 
-  const auto index0 =
-      program.create_index();
+  const auto index0 = program.create_index();
 
-  const auto scalar1 =
-      program.create_scalar();
+  const auto scalar1 = program.create_scalar();
 
-  const auto index1 =
-      program.create_index();
+  const auto index1 = program.create_index();
 
   REQUIRE(scalar0.value == 0);
   REQUIRE(scalar1.value == 1);
@@ -309,16 +265,11 @@ TEST_CASE("lir Program scalar and index ids have independent numbering") {
 TEST_CASE("lir Program buffer scalar and index ids each start at zero") {
   Program program;
 
-  const auto buffer =
-      program.create_buffer(
-          Shape{1},
-          Dtype::F32);
+  const auto buffer = program.create_buffer(Shape{1}, Dtype::F32);
 
-  const auto scalar =
-      program.create_scalar();
+  const auto scalar = program.create_scalar();
 
-  const auto index =
-      program.create_index();
+  const auto index = program.create_index();
 
   REQUIRE(buffer.value == 0);
   REQUIRE(scalar.value == 0);
@@ -338,74 +289,47 @@ TEST_CASE("lir Program add_input stores value id and buffer id") {
 
   const ValueId value{7};
 
-  const auto buffer =
-      program.create_buffer(
-          Shape{3},
-          Dtype::F32);
+  const auto buffer = program.create_buffer(Shape{3}, Dtype::F32);
 
-  program.add_input(
-      value,
-      buffer);
+  program.add_input(value, buffer);
 
   REQUIRE(program.inputs().size() == 1);
 
-  REQUIRE(
-      program.inputs()[0].value.value == 7);
+  REQUIRE(program.inputs()[0].value.value == 7);
 
-  REQUIRE(
-      program.inputs()[0].buffer.value ==
-      buffer.value);
+  REQUIRE(program.inputs()[0].buffer.value == buffer.value);
 }
 
 TEST_CASE("lir Program add_input preserves insertion order") {
   Program program;
 
-  const auto first_buffer =
-      program.create_buffer(
-          Shape{2},
-          Dtype::F32);
+  const auto first_buffer = program.create_buffer(Shape{2}, Dtype::F32);
 
-  const auto second_buffer =
-      program.create_buffer(
-          Shape{2},
-          Dtype::F32);
+  const auto second_buffer = program.create_buffer(Shape{2}, Dtype::F32);
 
-  program.add_input(
-      ValueId{10},
-      first_buffer);
+  program.add_input(ValueId{10}, first_buffer);
 
-  program.add_input(
-      ValueId{20},
-      second_buffer);
+  program.add_input(ValueId{20}, second_buffer);
 
   REQUIRE(program.inputs().size() == 2);
 
-  REQUIRE(
-      program.inputs()[0].value.value == 10);
+  REQUIRE(program.inputs()[0].value.value == 10);
 
-  REQUIRE(
-      program.inputs()[0].buffer.value == 0);
+  REQUIRE(program.inputs()[0].buffer.value == 0);
 
-  REQUIRE(
-      program.inputs()[1].value.value == 20);
+  REQUIRE(program.inputs()[1].value.value == 20);
 
-  REQUIRE(
-      program.inputs()[1].buffer.value == 1);
+  REQUIRE(program.inputs()[1].buffer.value == 1);
 }
 
 TEST_CASE("lir Program adding input does not create another buffer") {
   Program program;
 
-  const auto buffer =
-      program.create_buffer(
-          Shape{3},
-          Dtype::F32);
+  const auto buffer = program.create_buffer(Shape{3}, Dtype::F32);
 
   REQUIRE(program.buffer_count() == 1);
 
-  program.add_input(
-      ValueId{0},
-      buffer);
+  program.add_input(ValueId{0}, buffer);
 
   REQUIRE(program.buffer_count() == 1);
   REQUIRE(program.inputs().size() == 1);
@@ -414,20 +338,11 @@ TEST_CASE("lir Program adding input does not create another buffer") {
 TEST_CASE("lir Program can register multiple values as inputs") {
   Program program;
 
-  const auto a =
-      program.create_buffer(
-          Shape{2, 2},
-          Dtype::F32);
+  const auto a = program.create_buffer(Shape{2, 2}, Dtype::F32);
 
-  const auto b =
-      program.create_buffer(
-          Shape{2, 2},
-          Dtype::F32);
+  const auto b = program.create_buffer(Shape{2, 2}, Dtype::F32);
 
-  const auto c =
-      program.create_buffer(
-          Shape{2, 2},
-          Dtype::F32);
+  const auto c = program.create_buffer(Shape{2, 2}, Dtype::F32);
 
   program.add_input(ValueId{0}, a);
   program.add_input(ValueId{1}, b);
@@ -435,12 +350,9 @@ TEST_CASE("lir Program can register multiple values as inputs") {
 
   REQUIRE(program.inputs().size() == 3);
 
-  REQUIRE(
-      program.inputs()[0].buffer.value == 0);
-  REQUIRE(
-      program.inputs()[1].buffer.value == 1);
-  REQUIRE(
-      program.inputs()[2].buffer.value == 2);
+  REQUIRE(program.inputs()[0].buffer.value == 0);
+  REQUIRE(program.inputs()[1].buffer.value == 1);
+  REQUIRE(program.inputs()[2].buffer.value == 2);
 }
 
 // -----------------------------------------------------------------------------
@@ -450,35 +362,22 @@ TEST_CASE("lir Program can register multiple values as inputs") {
 TEST_CASE("lir Program add_output stores buffer id") {
   Program program;
 
-  const auto buffer =
-      program.create_buffer(
-          Shape{3},
-          Dtype::F32);
+  const auto buffer = program.create_buffer(Shape{3}, Dtype::F32);
 
   program.add_output(buffer);
 
   REQUIRE(program.outputs().size() == 1);
-  REQUIRE(program.outputs()[0].value ==
-          buffer.value);
+  REQUIRE(program.outputs()[0].value == buffer.value);
 }
 
 TEST_CASE("lir Program add_output preserves insertion order") {
   Program program;
 
-  const auto first =
-      program.create_buffer(
-          Shape{1},
-          Dtype::F32);
+  const auto first = program.create_buffer(Shape{1}, Dtype::F32);
 
-  const auto second =
-      program.create_buffer(
-          Shape{1},
-          Dtype::F32);
+  const auto second = program.create_buffer(Shape{1}, Dtype::F32);
 
-  const auto third =
-      program.create_buffer(
-          Shape{1},
-          Dtype::F32);
+  const auto third = program.create_buffer(Shape{1}, Dtype::F32);
 
   program.add_output(second);
   program.add_output(first);
@@ -486,26 +385,17 @@ TEST_CASE("lir Program add_output preserves insertion order") {
 
   REQUIRE(program.outputs().size() == 3);
 
-  REQUIRE(
-      program.outputs()[0].value ==
-      second.value);
+  REQUIRE(program.outputs()[0].value == second.value);
 
-  REQUIRE(
-      program.outputs()[1].value ==
-      first.value);
+  REQUIRE(program.outputs()[1].value == first.value);
 
-  REQUIRE(
-      program.outputs()[2].value ==
-      third.value);
+  REQUIRE(program.outputs()[2].value == third.value);
 }
 
 TEST_CASE("lir Program adding output does not modify buffer count") {
   Program program;
 
-  const auto buffer =
-      program.create_buffer(
-          Shape{4},
-          Dtype::F32);
+  const auto buffer = program.create_buffer(Shape{4}, Dtype::F32);
 
   REQUIRE(program.buffer_count() == 1);
 
@@ -522,14 +412,12 @@ TEST_CASE("lir Program adding output does not modify buffer count") {
 TEST_CASE("lir Program add_instruction stores constant instruction") {
   Program program;
 
-  const auto scalar =
-      program.create_scalar();
+  const auto scalar = program.create_scalar();
 
-  program.add_instruction(
-      tcr::lir::Constant{
-          scalar,
-          42.0F,
-      });
+  program.add_instruction(tcr::lir::Constant{
+      scalar,
+      42.0F,
+  });
 
   REQUIRE(program.instructions().size() == 1);
 }
@@ -537,23 +425,19 @@ TEST_CASE("lir Program add_instruction stores constant instruction") {
 TEST_CASE("lir Program add_instruction preserves instruction insertion order") {
   Program program;
 
-  const auto first =
-      program.create_scalar();
+  const auto first = program.create_scalar();
 
-  const auto second =
-      program.create_scalar();
+  const auto second = program.create_scalar();
 
-  program.add_instruction(
-      tcr::lir::Constant{
-          first,
-          10.0F,
-      });
+  program.add_instruction(tcr::lir::Constant{
+      first,
+      10.0F,
+  });
 
-  program.add_instruction(
-      tcr::lir::Constant{
-          second,
-          20.0F,
-      });
+  program.add_instruction(tcr::lir::Constant{
+      second,
+      20.0F,
+  });
 
   REQUIRE(program.instructions().size() == 2);
 }
@@ -561,26 +445,20 @@ TEST_CASE("lir Program add_instruction preserves instruction insertion order") {
 TEST_CASE("lir Program adding instructions does not affect resource counts") {
   Program program;
 
-  const auto scalar =
-      program.create_scalar();
+  const auto scalar = program.create_scalar();
 
-  const auto buffer =
-      program.create_buffer(
-          Shape{1},
-          Dtype::F32);
+  const auto buffer = program.create_buffer(Shape{1}, Dtype::F32);
 
-  const auto index =
-      program.create_index();
+  const auto index = program.create_index();
 
   REQUIRE(program.scalar_count() == 1);
   REQUIRE(program.buffer_count() == 1);
   REQUIRE(program.index_count() == 1);
 
-  program.add_instruction(
-      tcr::lir::Constant{
-          scalar,
-          1.0F,
-      });
+  program.add_instruction(tcr::lir::Constant{
+      scalar,
+      1.0F,
+  });
 
   REQUIRE(program.instructions().size() == 1);
 
@@ -597,48 +475,32 @@ TEST_CASE("lir Program adding instructions does not affect resource counts") {
 // Combined Program state
 // -----------------------------------------------------------------------------
 
-TEST_CASE("lir Program maintains buffers inputs outputs scalars indices and instructions independently") {
+TEST_CASE("lir Program maintains buffers inputs outputs scalars indices and "
+          "instructions independently") {
   Program program;
 
-  const auto a =
-      program.create_buffer(
-          Shape{3},
-          Dtype::F32);
+  const auto a = program.create_buffer(Shape{3}, Dtype::F32);
 
-  const auto b =
-      program.create_buffer(
-          Shape{3},
-          Dtype::F32);
+  const auto b = program.create_buffer(Shape{3}, Dtype::F32);
 
-  const auto c =
-      program.create_buffer(
-          Shape{3},
-          Dtype::F32);
+  const auto c = program.create_buffer(Shape{3}, Dtype::F32);
 
-  program.add_input(
-      ValueId{0},
-      a);
+  program.add_input(ValueId{0}, a);
 
-  program.add_input(
-      ValueId{1},
-      b);
+  program.add_input(ValueId{1}, b);
 
   program.add_output(c);
 
-  const auto scalar0 =
-      program.create_scalar();
+  const auto scalar0 = program.create_scalar();
 
-  const auto scalar1 =
-      program.create_scalar();
+  const auto scalar1 = program.create_scalar();
 
-  const auto index0 =
-      program.create_index();
+  const auto index0 = program.create_index();
 
-  program.add_instruction(
-      tcr::lir::Constant{
-          scalar0,
-          5.0F,
-      });
+  program.add_instruction(tcr::lir::Constant{
+      scalar0,
+      5.0F,
+  });
 
   REQUIRE(program.buffer_count() == 3);
   REQUIRE(program.buffers().size() == 3);
@@ -668,49 +530,34 @@ TEST_CASE("lir Program maintains buffers inputs outputs scalars indices and inst
 TEST_CASE("lir Program accessors can be used through const Program reference") {
   Program program;
 
-  const auto buffer =
-      program.create_buffer(
-          Shape{2},
-          Dtype::F32);
+  const auto buffer = program.create_buffer(Shape{2}, Dtype::F32);
 
-  program.add_input(
-      ValueId{0},
-      buffer);
+  program.add_input(ValueId{0}, buffer);
 
   program.add_output(buffer);
 
-  const auto scalar =
-      program.create_scalar();
+  const auto scalar = program.create_scalar();
 
   program.create_index();
 
-  program.add_instruction(
-      tcr::lir::Constant{
-          scalar,
-          1.0F,
-      });
+  program.add_instruction(tcr::lir::Constant{
+      scalar,
+      1.0F,
+  });
 
-  const Program &const_program =
-      program;
+  const Program &const_program = program;
 
-  REQUIRE(
-      const_program.buffers().size() == 1);
+  REQUIRE(const_program.buffers().size() == 1);
 
-  REQUIRE(
-      const_program.inputs().size() == 1);
+  REQUIRE(const_program.inputs().size() == 1);
 
-  REQUIRE(
-      const_program.outputs().size() == 1);
+  REQUIRE(const_program.outputs().size() == 1);
 
-  REQUIRE(
-      const_program.instructions().size() == 1);
+  REQUIRE(const_program.instructions().size() == 1);
 
-  REQUIRE(
-      const_program.buffer_count() == 1);
+  REQUIRE(const_program.buffer_count() == 1);
 
-  REQUIRE(
-      const_program.scalar_count() == 1);
+  REQUIRE(const_program.scalar_count() == 1);
 
-  REQUIRE(
-      const_program.index_count() == 1);
+  REQUIRE(const_program.index_count() == 1);
 }

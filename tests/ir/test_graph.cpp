@@ -7,11 +7,36 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <memory>
 #include <optional>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 using namespace tcr::ir;
+
+namespace {
+
+ElementwiseExpr input_expr(std::size_t index) {
+  return ElementwiseExpr{
+      .kind = ElementwiseExprKind::Input,
+      .input_index = index,
+      .lhs = nullptr,
+      .rhs = nullptr,
+  };
+}
+
+ElementwiseExpr binary_expr(ElementwiseExprKind kind, ElementwiseExpr lhs,
+                            ElementwiseExpr rhs) {
+  return ElementwiseExpr{
+      .kind = kind,
+      .input_index = 0,
+      .lhs = std::make_unique<ElementwiseExpr>(std::move(lhs)),
+      .rhs = std::make_unique<ElementwiseExpr>(std::move(rhs)),
+  };
+}
+
+} // namespace
 
 TEST_CASE("input creates a graph input value", "[graph]") {
   Graph g;
@@ -163,6 +188,142 @@ TEST_CASE("sum rejects invalid ValueId", "[graph]") {
   REQUIRE_THROWS_AS(g.sum(ValueId{42}), std::out_of_range);
 }
 
+TEST_CASE("fused_elementwise records node expression and output metadata",
+          "[graph][fused_elementwise]") {
+  Graph g;
+
+  ValueId a = g.input(Shape{2, 3}, Dtype::F32);
+  ValueId b = g.input(Shape{2, 3}, Dtype::F32);
+  ValueId c = g.input(Shape{2, 3}, Dtype::F32);
+
+  auto expr = binary_expr(
+      ElementwiseExprKind::Add,
+      binary_expr(ElementwiseExprKind::Mul, input_expr(0), input_expr(1)),
+      input_expr(2));
+
+  ValueId out = g.fused_elementwise({a, b, c}, std::move(expr));
+
+  const Node &n = g.node(NodeId{0});
+  REQUIRE(n.op == Op::FusedElementwise);
+  REQUIRE(n.inputs == std::vector<ValueId>{a, b, c});
+  REQUIRE(n.elementwise_expr.has_value());
+
+  const ElementwiseExpr &root = *n.elementwise_expr;
+  REQUIRE(root.kind == ElementwiseExprKind::Add);
+  REQUIRE(root.lhs != nullptr);
+  REQUIRE(root.rhs != nullptr);
+
+  REQUIRE(root.lhs->kind == ElementwiseExprKind::Mul);
+  REQUIRE(root.lhs->lhs != nullptr);
+  REQUIRE(root.lhs->rhs != nullptr);
+  REQUIRE(root.lhs->lhs->kind == ElementwiseExprKind::Input);
+  REQUIRE(root.lhs->lhs->input_index == 0);
+  REQUIRE(root.lhs->rhs->kind == ElementwiseExprKind::Input);
+  REQUIRE(root.lhs->rhs->input_index == 1);
+
+  REQUIRE(root.rhs->kind == ElementwiseExprKind::Input);
+  REQUIRE(root.rhs->input_index == 2);
+
+  const Value &v = g.value(out);
+  REQUIRE(v.shape == Shape{2, 3});
+  REQUIRE(v.dtype == Dtype::F32);
+  REQUIRE(v.producer == NodeId{0});
+}
+
+TEST_CASE("fused_elementwise preserves duplicate boundary inputs",
+          "[graph][fused_elementwise]") {
+  Graph g;
+
+  ValueId a = g.input(Shape{2, 3}, Dtype::F32);
+
+  auto expr =
+      binary_expr(ElementwiseExprKind::Add, input_expr(0), input_expr(1));
+  ValueId out = g.fused_elementwise({a, a}, std::move(expr));
+
+  const Node &n = g.node(*g.value(out).producer);
+  REQUIRE(n.inputs == std::vector<ValueId>{a, a});
+  REQUIRE(n.elementwise_expr.has_value());
+  REQUIRE(n.elementwise_expr->lhs->input_index == 0);
+  REQUIRE(n.elementwise_expr->rhs->input_index == 1);
+}
+
+TEST_CASE("fused_elementwise accepts computed values as boundary inputs",
+          "[graph][fused_elementwise]") {
+  Graph g;
+
+  ValueId a = g.input(Shape{2, 3}, Dtype::F32);
+  ValueId b = g.input(Shape{3, 4}, Dtype::F32);
+  ValueId bias = g.input(Shape{2, 4}, Dtype::F32);
+
+  ValueId product = g.matmul(a, b);
+
+  auto expr =
+      binary_expr(ElementwiseExprKind::Add, input_expr(0), input_expr(1));
+  ValueId out = g.fused_elementwise({product, bias}, std::move(expr));
+
+  const Node &n = g.node(*g.value(out).producer);
+  REQUIRE(n.op == Op::FusedElementwise);
+  REQUIRE(n.inputs == std::vector<ValueId>{product, bias});
+
+  const Value &v = g.value(out);
+  REQUIRE(v.shape == Shape{2, 4});
+  REQUIRE(v.dtype == Dtype::F32);
+}
+
+TEST_CASE("fused_elementwise rejects Input as the root expression",
+          "[graph][fused_elementwise]") {
+  Graph g;
+
+  ValueId a = g.input(Shape{2, 3}, Dtype::F32);
+
+  REQUIRE_THROWS_AS(g.fused_elementwise({a}, input_expr(0)), std::logic_error);
+}
+
+TEST_CASE("fused_elementwise rejects an empty boundary input list",
+          "[graph][fused_elementwise]") {
+  Graph g;
+
+  auto expr =
+      binary_expr(ElementwiseExprKind::Add, input_expr(0), input_expr(0));
+
+  REQUIRE_THROWS_AS(g.fused_elementwise({}, std::move(expr)), std::logic_error);
+}
+
+TEST_CASE("fused_elementwise rejects invalid boundary ValueIds",
+          "[graph][fused_elementwise]") {
+  Graph g;
+
+  ValueId a = g.input(Shape{2, 3}, Dtype::F32);
+
+  SECTION("positive out-of-range ValueId") {
+    auto expr =
+        binary_expr(ElementwiseExprKind::Add, input_expr(0), input_expr(1));
+    REQUIRE_THROWS_AS(g.fused_elementwise({a, ValueId{99}}, std::move(expr)),
+                      std::out_of_range);
+  }
+
+  SECTION("negative ValueId") {
+    auto expr =
+        binary_expr(ElementwiseExprKind::Add, input_expr(0), input_expr(1));
+    REQUIRE_THROWS_AS(g.fused_elementwise({a, ValueId{-1}}, std::move(expr)),
+                      std::out_of_range);
+  }
+}
+
+TEST_CASE("fused_elementwise rejects mismatched boundary shapes",
+          "[graph][fused_elementwise]") {
+  Graph g;
+
+  ValueId a = g.input(Shape{2, 3}, Dtype::F32);
+  ValueId b = g.input(Shape{3, 2}, Dtype::F32);
+
+  auto expr =
+      binary_expr(ElementwiseExprKind::Add, input_expr(0), input_expr(1));
+
+  REQUIRE_THROWS_AS(g.fused_elementwise({a, b}, std::move(expr)),
+                    std::invalid_argument);
+}
+
 TEST_CASE("metadata propagates through multiple graph operations",
           "[graph][type_inference]") {
   Graph g;
@@ -290,9 +451,7 @@ TEST_CASE("failed set_outputs preserves existing outputs", "[graph]") {
 
   g.set_outputs({a});
 
-  REQUIRE_THROWS_AS(
-      g.set_outputs({b, ValueId{999}}),
-      std::out_of_range);
+  REQUIRE_THROWS_AS(g.set_outputs({b, ValueId{999}}), std::out_of_range);
 
   REQUIRE(g.outputs() == std::vector<ValueId>{a});
 }
@@ -303,12 +462,16 @@ TEST_CASE("operation results are not automatically graph inputs", "[graph]") {
   ValueId a = g.input(Shape{2, 3}, Dtype::F32);
   ValueId b = g.input(Shape{2, 3}, Dtype::F32);
 
-  ValueId out = g.add(a, b);
+  ValueId add_out = g.add(a, b);
+  auto expr =
+      binary_expr(ElementwiseExprKind::Mul, input_expr(0), input_expr(1));
+  ValueId fused_out = g.fused_elementwise({a, b}, std::move(expr));
 
   REQUIRE(g.inputs() == std::vector<ValueId>{a, b});
 
   for (ValueId id : g.inputs()) {
-    REQUIRE(id != out);
+    REQUIRE(id != add_out);
+    REQUIRE(id != fused_out);
   }
 }
 
@@ -320,10 +483,15 @@ TEST_CASE("ValueIds increase as values are created", "[graph]") {
   ValueId c = g.add(a, b);
   ValueId d = g.mul(a, b);
 
+  auto expr =
+      binary_expr(ElementwiseExprKind::Add, input_expr(0), input_expr(1));
+  ValueId e = g.fused_elementwise({a, b}, std::move(expr));
+
   REQUIRE(a == ValueId{0});
   REQUIRE(b == ValueId{1});
   REQUIRE(c == ValueId{2});
   REQUIRE(d == ValueId{3});
+  REQUIRE(e == ValueId{4});
 }
 
 TEST_CASE("NodeIds increase as operations are created", "[graph]") {
@@ -335,11 +503,17 @@ TEST_CASE("NodeIds increase as operations are created", "[graph]") {
   ValueId add_out = g.add(a, b);
   ValueId mul_out = g.mul(a, b);
 
+  auto expr =
+      binary_expr(ElementwiseExprKind::Add, input_expr(0), input_expr(1));
+  ValueId fused_out = g.fused_elementwise({a, b}, std::move(expr));
+
   REQUIRE(g.value(add_out).producer == NodeId{0});
   REQUIRE(g.value(mul_out).producer == NodeId{1});
+  REQUIRE(g.value(fused_out).producer == NodeId{2});
 
   REQUIRE(g.node(NodeId{0}).op == Op::Add);
   REQUIRE(g.node(NodeId{1}).op == Op::Mul);
+  REQUIRE(g.node(NodeId{2}).op == Op::FusedElementwise);
 }
 
 TEST_CASE("failed add does not create a node or value", "[graph]") {
@@ -367,6 +541,26 @@ TEST_CASE("failed matmul does not create a node or value", "[graph]") {
   const std::size_t nodes_before = g.nodes_count();
 
   REQUIRE_THROWS_AS(g.matmul(a, b), std::invalid_argument);
+
+  REQUIRE(g.values_count() == values_before);
+  REQUIRE(g.nodes_count() == nodes_before);
+}
+
+TEST_CASE("failed fused_elementwise does not create a node or value",
+          "[graph][fused_elementwise]") {
+  Graph g;
+
+  ValueId a = g.input(Shape{2, 3}, Dtype::F32);
+  ValueId b = g.input(Shape{3, 2}, Dtype::F32);
+
+  const std::size_t values_before = g.values_count();
+  const std::size_t nodes_before = g.nodes_count();
+
+  auto expr =
+      binary_expr(ElementwiseExprKind::Add, input_expr(0), input_expr(1));
+
+  REQUIRE_THROWS_AS(g.fused_elementwise({a, b}, std::move(expr)),
+                    std::invalid_argument);
 
   REQUIRE(g.values_count() == values_before);
   REQUIRE(g.nodes_count() == nodes_before);

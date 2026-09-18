@@ -9,6 +9,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <memory>
 #include <stdexcept>
 #include <vector>
 
@@ -391,4 +392,52 @@ TEST_CASE("Interpreter rejects negative output ValueId",
 
   REQUIRE_THROWS_AS(interpreter.run(graph, ValueId{-1}, bindings),
                     std::out_of_range);
+}
+
+TEST_CASE("Interpreter rejects optimized FusedElementwise node",
+          "[reference][interpreter][negative][fusion]") {
+  Graph graph;
+
+  const ValueId a = graph.input(Shape{2}, Dtype::F32);
+  const ValueId b = graph.input(Shape{2}, Dtype::F32);
+
+  ElementwiseExpr expr{
+      .kind = ElementwiseExprKind::Add,
+      .input_index = 0,
+      .lhs = std::make_unique<ElementwiseExpr>(ElementwiseExpr{
+          .kind = ElementwiseExprKind::Input,
+          .input_index = 0,
+          .lhs = nullptr,
+          .rhs = nullptr,
+      }),
+      .rhs = std::make_unique<ElementwiseExpr>(ElementwiseExpr{
+          .kind = ElementwiseExprKind::Input,
+          .input_index = 1,
+          .lhs = nullptr,
+          .rhs = nullptr,
+      }),
+  };
+
+  const ValueId fused = graph.fused_elementwise({a, b}, std::move(expr));
+
+  InputBindings bindings;
+
+  bindings.bind(a, Tensor{
+                       Shape{2},
+                       Dtype::F32,
+                       std::vector<float>{1.0f, 2.0f},
+                   });
+
+  bindings.bind(b, Tensor{
+                       Shape{2},
+                       Dtype::F32,
+                       std::vector<float>{3.0f, 4.0f},
+                   });
+
+  Interpreter interpreter;
+
+  // The reference interpreter is deliberately an oracle for the original
+  // unfused HIR. Optimized fusion nodes are compiler-internal input to
+  // lowering.
+  REQUIRE_THROWS_AS(interpreter.run(graph, fused, bindings), std::logic_error);
 }

@@ -849,6 +849,359 @@ TEST_CASE("Compiler and VM match reference interpreter for longer elementwise "
 }
 
 // =============================================================================
+// Fusion-specific end-to-end coverage
+// =============================================================================
+
+TEST_CASE("Compiler and VM preserve semantics when both elementwise branches "
+          "are fusible") {
+
+  Graph graph;
+
+  const auto a = graph.input(Shape{3}, Dtype::F32);
+  const auto b = graph.input(Shape{3}, Dtype::F32);
+  const auto c = graph.input(Shape{3}, Dtype::F32);
+  const auto d = graph.input(Shape{3}, Dtype::F32);
+
+  const auto left = graph.mul(a, b);
+  const auto right = graph.add(c, d);
+  const auto out = graph.add(left, right);
+
+  graph.set_outputs({out});
+
+  reference::InputBindings reference_inputs;
+  RuntimeInputs runtime_inputs;
+
+  bind_input(reference_inputs, runtime_inputs, a, Shape{3},
+             {
+                 1.0F,
+                 2.0F,
+                 3.0F,
+             });
+
+  bind_input(reference_inputs, runtime_inputs, b, Shape{3},
+             {
+                 4.0F,
+                 5.0F,
+                 6.0F,
+             });
+
+  bind_input(reference_inputs, runtime_inputs, c, Shape{3},
+             {
+                 10.0F,
+                 20.0F,
+                 30.0F,
+             });
+
+  bind_input(reference_inputs, runtime_inputs, d, Shape{3},
+             {
+                 1.0F,
+                 2.0F,
+                 3.0F,
+             });
+
+  reference::Interpreter interpreter;
+
+  const auto expected = interpreter.run(graph, out, reference_inputs);
+
+  const auto actual_outputs = compile_and_run(graph, runtime_inputs);
+
+  REQUIRE(actual_outputs.size() == 1);
+
+  require_same_tensor(expected, actual_outputs[0]);
+
+  REQUIRE(actual_outputs[0].data() == std::vector<float>{
+                                          15.0F,
+                                          32.0F,
+                                          51.0F,
+                                      });
+}
+
+TEST_CASE("Compiler and VM preserve semantics when fused expression reuses "
+          "same boundary input") {
+
+  Graph graph;
+
+  const auto x = graph.input(Shape{2}, Dtype::F32);
+  const auto y = graph.input(Shape{2}, Dtype::F32);
+
+  const auto product = graph.mul(x, y);
+  const auto out = graph.add(product, x);
+
+  graph.set_outputs({out});
+
+  reference::InputBindings reference_inputs;
+  RuntimeInputs runtime_inputs;
+
+  bind_input(reference_inputs, runtime_inputs, x, Shape{2},
+             {
+                 2.0F,
+                 3.0F,
+             });
+
+  bind_input(reference_inputs, runtime_inputs, y, Shape{2},
+             {
+                 4.0F,
+                 5.0F,
+             });
+
+  reference::Interpreter interpreter;
+
+  const auto expected = interpreter.run(graph, out, reference_inputs);
+
+  const auto actual_outputs = compile_and_run(graph, runtime_inputs);
+
+  REQUIRE(actual_outputs.size() == 1);
+
+  require_same_tensor(expected, actual_outputs[0]);
+
+  REQUIRE(actual_outputs[0].data() == std::vector<float>{
+                                          10.0F,
+                                          18.0F,
+                                      });
+}
+
+TEST_CASE("Compiler and VM preserve semantics for fused scalar chain") {
+
+  Graph graph;
+
+  const auto x = graph.input(Shape{}, Dtype::F32);
+  const auto y = graph.input(Shape{}, Dtype::F32);
+  const auto z = graph.input(Shape{}, Dtype::F32);
+
+  const auto product = graph.mul(x, y);
+  const auto added = graph.add(product, z);
+  const auto out = graph.mul(added, x);
+
+  graph.set_outputs({out});
+
+  reference::InputBindings reference_inputs;
+  RuntimeInputs runtime_inputs;
+
+  bind_input(reference_inputs, runtime_inputs, x, Shape{}, {2.0F});
+  bind_input(reference_inputs, runtime_inputs, y, Shape{}, {3.0F});
+  bind_input(reference_inputs, runtime_inputs, z, Shape{}, {4.0F});
+
+  reference::Interpreter interpreter;
+
+  const auto expected = interpreter.run(graph, out, reference_inputs);
+
+  const auto actual_outputs = compile_and_run(graph, runtime_inputs);
+
+  REQUIRE(actual_outputs.size() == 1);
+
+  require_same_tensor(expected, actual_outputs[0]);
+
+  REQUIRE(actual_outputs[0].shape() == Shape{});
+  REQUIRE(actual_outputs[0].load(0) == 20.0F);
+}
+
+TEST_CASE(
+    "Compiler and VM preserve graph output boundary while fusing above it") {
+
+  Graph graph;
+
+  const auto x = graph.input(Shape{3}, Dtype::F32);
+  const auto y = graph.input(Shape{3}, Dtype::F32);
+  const auto z = graph.input(Shape{3}, Dtype::F32);
+  const auto w = graph.input(Shape{3}, Dtype::F32);
+
+  const auto exposed = graph.mul(x, y);
+  const auto added = graph.add(exposed, z);
+  const auto out = graph.mul(added, w);
+
+  graph.set_outputs({
+      exposed,
+      out,
+  });
+
+  reference::InputBindings reference_inputs;
+  RuntimeInputs runtime_inputs;
+
+  bind_input(reference_inputs, runtime_inputs, x, Shape{3},
+             {
+                 1.0F,
+                 2.0F,
+                 3.0F,
+             });
+
+  bind_input(reference_inputs, runtime_inputs, y, Shape{3},
+             {
+                 4.0F,
+                 5.0F,
+                 6.0F,
+             });
+
+  bind_input(reference_inputs, runtime_inputs, z, Shape{3},
+             {
+                 10.0F,
+                 20.0F,
+                 30.0F,
+             });
+
+  bind_input(reference_inputs, runtime_inputs, w, Shape{3},
+             {
+                 2.0F,
+                 3.0F,
+                 4.0F,
+             });
+
+  reference::Interpreter interpreter;
+
+  const auto expected_exposed =
+      interpreter.run(graph, exposed, reference_inputs);
+
+  const auto expected_out = interpreter.run(graph, out, reference_inputs);
+
+  const auto actual_outputs = compile_and_run(graph, runtime_inputs);
+
+  REQUIRE(actual_outputs.size() == 2);
+
+  require_same_tensor(expected_exposed, actual_outputs[0]);
+  require_same_tensor(expected_out, actual_outputs[1]);
+
+  REQUIRE(actual_outputs[0].data() == std::vector<float>{
+                                          4.0F,
+                                          10.0F,
+                                          18.0F,
+                                      });
+
+  REQUIRE(actual_outputs[1].data() == std::vector<float>{
+                                          28.0F,
+                                          90.0F,
+                                          192.0F,
+                                      });
+}
+
+TEST_CASE(
+    "Compiler and VM preserve semantics when fusion stops at MatMul boundary") {
+
+  Graph graph;
+
+  const auto lhs = graph.input(Shape{2, 2}, Dtype::F32);
+  const auto rhs = graph.input(Shape{2, 2}, Dtype::F32);
+  const auto bias = graph.input(Shape{2, 2}, Dtype::F32);
+  const auto scale = graph.input(Shape{2, 2}, Dtype::F32);
+
+  const auto product = graph.matmul(lhs, rhs);
+  const auto added = graph.add(product, bias);
+  const auto out = graph.mul(added, scale);
+
+  graph.set_outputs({out});
+
+  reference::InputBindings reference_inputs;
+  RuntimeInputs runtime_inputs;
+
+  bind_input(reference_inputs, runtime_inputs, lhs, Shape{2, 2},
+             {
+                 1.0F,
+                 2.0F,
+                 3.0F,
+                 4.0F,
+             });
+
+  bind_input(reference_inputs, runtime_inputs, rhs, Shape{2, 2},
+             {
+                 5.0F,
+                 6.0F,
+                 7.0F,
+                 8.0F,
+             });
+
+  bind_input(reference_inputs, runtime_inputs, bias, Shape{2, 2},
+             {
+                 1.0F,
+                 2.0F,
+                 3.0F,
+                 4.0F,
+             });
+
+  bind_input(reference_inputs, runtime_inputs, scale, Shape{2, 2},
+             {
+                 2.0F,
+                 3.0F,
+                 4.0F,
+                 5.0F,
+             });
+
+  reference::Interpreter interpreter;
+
+  const auto expected = interpreter.run(graph, out, reference_inputs);
+
+  const auto actual_outputs = compile_and_run(graph, runtime_inputs);
+
+  REQUIRE(actual_outputs.size() == 1);
+
+  require_same_tensor(expected, actual_outputs[0]);
+
+  REQUIRE(actual_outputs[0].data() == std::vector<float>{
+                                          40.0F,
+                                          72.0F,
+                                          184.0F,
+                                          270.0F,
+                                      });
+}
+
+TEST_CASE(
+    "Compiler and VM preserve semantics for independent fused output islands") {
+
+  Graph graph;
+
+  const auto a = graph.input(Shape{2}, Dtype::F32);
+  const auto b = graph.input(Shape{2}, Dtype::F32);
+  const auto c = graph.input(Shape{2}, Dtype::F32);
+  const auto d = graph.input(Shape{2}, Dtype::F32);
+  const auto e = graph.input(Shape{2}, Dtype::F32);
+  const auto f = graph.input(Shape{2}, Dtype::F32);
+
+  const auto first_product = graph.mul(a, b);
+  const auto first_out = graph.add(first_product, c);
+
+  const auto second_sum = graph.add(d, e);
+  const auto second_out = graph.mul(second_sum, f);
+
+  graph.set_outputs({
+      first_out,
+      second_out,
+  });
+
+  reference::InputBindings reference_inputs;
+  RuntimeInputs runtime_inputs;
+
+  bind_input(reference_inputs, runtime_inputs, a, Shape{2}, {1.0F, 2.0F});
+  bind_input(reference_inputs, runtime_inputs, b, Shape{2}, {3.0F, 4.0F});
+  bind_input(reference_inputs, runtime_inputs, c, Shape{2}, {5.0F, 6.0F});
+
+  bind_input(reference_inputs, runtime_inputs, d, Shape{2}, {7.0F, 8.0F});
+  bind_input(reference_inputs, runtime_inputs, e, Shape{2}, {1.0F, 2.0F});
+  bind_input(reference_inputs, runtime_inputs, f, Shape{2}, {2.0F, 3.0F});
+
+  reference::Interpreter interpreter;
+
+  const auto expected_first =
+      interpreter.run(graph, first_out, reference_inputs);
+
+  const auto expected_second =
+      interpreter.run(graph, second_out, reference_inputs);
+
+  const auto actual_outputs = compile_and_run(graph, runtime_inputs);
+
+  REQUIRE(actual_outputs.size() == 2);
+
+  require_same_tensor(expected_first, actual_outputs[0]);
+  require_same_tensor(expected_second, actual_outputs[1]);
+
+  REQUIRE(actual_outputs[0].data() == std::vector<float>{
+                                          8.0F,
+                                          14.0F,
+                                      });
+
+  REQUIRE(actual_outputs[1].data() == std::vector<float>{
+                                          16.0F,
+                                          30.0F,
+                                      });
+}
+
+// =============================================================================
 // Elementwise -> reduction
 // =============================================================================
 

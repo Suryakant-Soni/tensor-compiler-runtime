@@ -12,6 +12,7 @@
 
 #include <optional>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 using namespace tcr::ir;
@@ -451,12 +452,131 @@ TEST_CASE("infer_type rejects Sum with more than one operand",
 }
 
 // ============================================================================
+// FUSED ELEMENTWISE
+// ============================================================================
+
+TEST_CASE("infer_type infers FusedElementwise result for matching matrices",
+          "[type_inference][fused_elementwise]") {
+  const Value a = make_value(Shape{2, 3});
+  const Value b = make_value(Shape{2, 3});
+
+  const InferredType result =
+      infer_type(Op::FusedElementwise, std::vector<const Value *>{&a, &b});
+
+  REQUIRE(result.shape == Shape{2, 3});
+  REQUIRE(result.dtype == Dtype::F32);
+}
+
+TEST_CASE("infer_type infers FusedElementwise result for matching vectors",
+          "[type_inference][fused_elementwise]") {
+  const Value a = make_value(Shape{7});
+  const Value b = make_value(Shape{7});
+
+  const InferredType result =
+      infer_type(Op::FusedElementwise, std::vector<const Value *>{&a, &b});
+
+  REQUIRE(result.shape == Shape{7});
+  REQUIRE(result.dtype == Dtype::F32);
+}
+
+TEST_CASE("infer_type infers FusedElementwise result for matching scalars",
+          "[type_inference][fused_elementwise]") {
+  const Value a = make_value(Shape{});
+  const Value b = make_value(Shape{});
+
+  const InferredType result =
+      infer_type(Op::FusedElementwise, std::vector<const Value *>{&a, &b});
+
+  REQUIRE(result.shape == Shape{});
+  REQUIRE(result.dtype == Dtype::F32);
+}
+
+TEST_CASE("infer_type infers FusedElementwise result for higher-rank tensors",
+          "[type_inference][fused_elementwise]") {
+  const Value a = make_value(Shape{2, 3, 4, 5});
+  const Value b = make_value(Shape{2, 3, 4, 5});
+
+  const InferredType result =
+      infer_type(Op::FusedElementwise, std::vector<const Value *>{&a, &b});
+
+  REQUIRE(result.shape == Shape{2, 3, 4, 5});
+  REQUIRE(result.dtype == Dtype::F32);
+}
+
+TEST_CASE("infer_type accepts more than two matching FusedElementwise inputs",
+          "[type_inference][fused_elementwise]") {
+  const Value a = make_value(Shape{2, 3});
+  const Value b = make_value(Shape{2, 3});
+  const Value c = make_value(Shape{2, 3});
+  const Value d = make_value(Shape{2, 3});
+
+  const InferredType result = infer_type(
+      Op::FusedElementwise, std::vector<const Value *>{&a, &b, &c, &d});
+
+  REQUIRE(result.shape == Shape{2, 3});
+  REQUIRE(result.dtype == Dtype::F32);
+}
+
+TEST_CASE("infer_type accepts one FusedElementwise boundary input",
+          "[type_inference][fused_elementwise]") {
+  const Value input = make_value(Shape{2, 3});
+
+  const InferredType result =
+      infer_type(Op::FusedElementwise, std::vector<const Value *>{&input});
+
+  REQUIRE(result.shape == Shape{2, 3});
+  REQUIRE(result.dtype == Dtype::F32);
+}
+
+TEST_CASE("infer_type rejects FusedElementwise inputs with different shapes",
+          "[type_inference][fused_elementwise]") {
+  const Value a = make_value(Shape{2, 3});
+  const Value b = make_value(Shape{3, 2});
+
+  REQUIRE_THROWS_AS(
+      infer_type(Op::FusedElementwise, std::vector<const Value *>{&a, &b}),
+      std::invalid_argument);
+}
+
+TEST_CASE("infer_type rejects FusedElementwise inputs with different ranks",
+          "[type_inference][fused_elementwise]") {
+  const Value a = make_value(Shape{2, 3});
+  const Value b = make_value(Shape{2, 3, 1});
+
+  REQUIRE_THROWS_AS(
+      infer_type(Op::FusedElementwise, std::vector<const Value *>{&a, &b}),
+      std::invalid_argument);
+}
+
+TEST_CASE("infer_type preserves zero-sized dimensions for FusedElementwise",
+          "[type_inference][fused_elementwise][edge]") {
+  const Value a = make_value(Shape{2, 0, 4});
+  const Value b = make_value(Shape{2, 0, 4});
+  const Value c = make_value(Shape{2, 0, 4});
+
+  const InferredType result =
+      infer_type(Op::FusedElementwise, std::vector<const Value *>{&a, &b, &c});
+
+  REQUIRE(result.shape == Shape{2, 0, 4});
+  REQUIRE(result.dtype == Dtype::F32);
+}
+
+TEST_CASE("infer_type rejects FusedElementwise with no inputs",
+          "[type_inference][fused_elementwise][arity]") {
+  REQUIRE_THROWS_AS(
+      infer_type(Op::FusedElementwise, std::vector<const Value *>{}),
+      std::invalid_argument);
+}
+
+// ============================================================================
 // UNSUPPORTED OPERATION
 // ============================================================================
 
 TEST_CASE("infer_type rejects Input because Input has no inferred result type",
           "[type_inference][unsupported]") {
-  REQUIRE_THROWS_AS(infer_type(Op::Input, std::vector<const Value *>{}),
+  const Value input = make_value(Shape{2, 3});
+
+  REQUIRE_THROWS_AS(infer_type(Op::Input, std::vector<const Value *>{&input}),
                     std::logic_error);
 }
 

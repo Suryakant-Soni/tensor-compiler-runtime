@@ -1,11 +1,13 @@
 #include "tcr/ir/dtype.hpp"
 #include "tcr/ir/ids.hpp"
 #include "tcr/ir/nodes.hpp"
+#include "tcr/ir/op.hpp"
 #include "tcr/ir/shape.hpp"
 #include "tcr/ir/value.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -81,6 +83,11 @@ TEST_CASE("F32 has expected string representation", "[dtype]") {
   REQUIRE(to_string(Dtype::F32) == "f32");
 }
 
+TEST_CASE("FusedElementwise has expected string representation",
+          "[op][fusion]") {
+  REQUIRE(to_string(Op::FusedElementwise) == "FusedElementwise");
+}
+
 // -----------------------------------------------------------------------------
 // Node
 // -----------------------------------------------------------------------------
@@ -92,10 +99,56 @@ TEST_CASE("Node stores operation and input ValueIds", "[node]") {
   Node node{
       .op = Op::Add,
       .inputs = {a, b},
+      .elementwise_expr = std::nullopt,
   };
 
   REQUIRE(node.op == Op::Add);
   REQUIRE(node.inputs == std::vector<ValueId>{a, b});
+  REQUIRE_FALSE(node.elementwise_expr.has_value());
+}
+
+TEST_CASE("FusedElementwise node stores expression payload", "[node][fusion]") {
+  ValueId a{0};
+  ValueId b{1};
+
+  ElementwiseExpr expr{
+      .kind = ElementwiseExprKind::Add,
+      .input_index = 0,
+      .lhs = std::make_unique<ElementwiseExpr>(ElementwiseExpr{
+          .kind = ElementwiseExprKind::Input,
+          .input_index = 0,
+          .lhs = nullptr,
+          .rhs = nullptr,
+      }),
+      .rhs = std::make_unique<ElementwiseExpr>(ElementwiseExpr{
+          .kind = ElementwiseExprKind::Input,
+          .input_index = 1,
+          .lhs = nullptr,
+          .rhs = nullptr,
+      }),
+  };
+
+  Node node{
+      .op = Op::FusedElementwise,
+      .inputs = {a, b},
+      .elementwise_expr = std::optional<ElementwiseExpr>{std::move(expr)},
+  };
+
+  REQUIRE(node.op == Op::FusedElementwise);
+  REQUIRE(node.inputs == std::vector<ValueId>{a, b});
+  REQUIRE(node.elementwise_expr.has_value());
+
+  const auto &stored = *node.elementwise_expr;
+
+  REQUIRE(stored.kind == ElementwiseExprKind::Add);
+  REQUIRE(stored.lhs != nullptr);
+  REQUIRE(stored.rhs != nullptr);
+
+  REQUIRE(stored.lhs->kind == ElementwiseExprKind::Input);
+  REQUIRE(stored.lhs->input_index == 0);
+
+  REQUIRE(stored.rhs->kind == ElementwiseExprKind::Input);
+  REQUIRE(stored.rhs->input_index == 1);
 }
 
 TEST_CASE("Unary node stores one input", "[node]") {
@@ -104,6 +157,7 @@ TEST_CASE("Unary node stores one input", "[node]") {
   Node node{
       .op = Op::Sum,
       .inputs = {input},
+      .elementwise_expr = std::nullopt,
   };
 
   REQUIRE(node.op == Op::Sum);
