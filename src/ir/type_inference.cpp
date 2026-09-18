@@ -84,8 +84,8 @@ InferredType infer_type(Op op, const std::vector<const Value *> &inputs) {
       }
     }
     return InferredType{
-        .dtype = first_dtype,
         .shape = first_shape,
+        .dtype = first_dtype,
     };
   }
   default:

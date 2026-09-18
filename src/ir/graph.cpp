@@ -165,13 +165,15 @@ ValueId Graph::fused_elementwise(const std::vector<ValueId> fused_node_inputs,
   }
   const auto inferred = infer_type(Op::FusedElementwise, input_values);
   NodeId nodeid{static_cast<int32_t>(nodes_.size())};
-  nodes_.push_back(Node{
-      .elementwise_expr = std::optional<ElementwiseExpr>{std::move(expr)},
-      .inputs = fused_node_inputs,
+  auto new_node = Node{
       .op = Op::FusedElementwise,
-  });
+      .inputs = fused_node_inputs,
+      .elementwise_expr = std::optional<ElementwiseExpr>{std::move(expr)},
+  };
+  nodes_.push_back(std::move(new_node));
   ValueId value_id{static_cast<int32_t>(values_.size())};
-  values_.push_back(Value{.shape = inferred.shape, .dtype = inferred.dtype});
+  values_.push_back(Value{
+      .producer = nodeid, .shape = inferred.shape, .dtype = inferred.dtype});
   return value_id;
 }
 

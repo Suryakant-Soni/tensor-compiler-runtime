@@ -73,8 +73,8 @@ make_fusion_boundary_input(const ir::ValueId &old_valueid,
   const auto index = candidate.boundary_inputs.size();
   candidate.boundary_inputs.push_back(old_valueid);
   return ir::ElementwiseExpr{
-      .input_index = index,
       .kind = ir::ElementwiseExprKind::Input,
+      .input_index = index,
       .lhs = nullptr,
       .rhs = nullptr,
   };
@@ -134,8 +134,8 @@ build_fusion_expr(ir::ValueId v, const ir::Graph &old_graph,
   auto rhs = build_fusion_expr(node.inputs[1], old_graph, use_count, is_output,
                                candidate);
   return ir::ElementwiseExpr{
-      .input_index = 0,
       .kind = get_elementwise_kind(node.op),
+      .input_index = 0,
       .lhs = std::make_unique<ir::ElementwiseExpr>(std::move(lhs)),
       .rhs = std::make_unique<ir::ElementwiseExpr>(std::move(rhs)),
   };
@@ -159,12 +159,11 @@ ir::ValueId rewrite_value(const ir::ValueId old_v, const ir::Graph &old_graph,
   const auto &output_value = old_graph.value(old_v);
 
   // -----------------------------------------------------------------------------
-  // Value is an external input, create new graph's input; return
+  // producer not present,unexpected since before starting rewrite we populated
+  // all external inputs to new graph
   // ------------------------------------------------------------------------------
   if (!output_value.producer.has_value()) {
-    const auto new_v = new_graph.input(output_value.shape, output_value.dtype);
-    remap[old_v.value] = new_v;
-    return new_v;
+    throw std::logic_error("graph input should already be present in the remap");
   }
 
   const auto &node = old_graph.node(*output_value.producer);
@@ -268,15 +267,15 @@ inputs          ↓
         create FusedElementwise
  */
 
-const ir::Graph ElementwiseFusion::run(const ir::Graph &graph) const {
+const ir::Graph ElementwiseFusion::run(const ir::Graph &old_graph) const {
 
   // -----------------------------------------------------------------------------
   // to validate if there is only single consumer for a value for it to be
   // fusible; index-> valueid and value - count total
   // ------------------------------------------------------------------------------
-  std::vector<std::size_t> use_count(graph.values_count(), 0);
-  for (std::int32_t i = 0; i < graph.nodes_count(); ++i) {
-    const auto &inputs = graph.node(ir::NodeId{i}).inputs;
+  std::vector<std::size_t> use_count(old_graph.values_count(), 0);
+  for (std::int32_t i = 0; i < old_graph.nodes_count(); ++i) {
+    const auto &inputs = old_graph.node(ir::NodeId{i}).inputs;
     for (const auto &input : inputs) {
       ++use_count[input.value];
     }
@@ -284,22 +283,34 @@ const ir::Graph ElementwiseFusion::run(const ir::Graph &graph) const {
   // -----------------------------------------------------------------------------
   // check if the valueid is external output or not
   // ------------------------------------------------------------------------------
-  std::vector<bool> is_output(graph.values_count(), false);
-  for (const auto out_v : graph.outputs()) {
+  std::vector<bool> is_output(old_graph.values_count(), false);
+  for (const auto out_v : old_graph.outputs()) {
     is_output[out_v.value] = true;
   }
 
   // map of old valueid->index to new valueid->value
-  std::vector<std::optional<ir::ValueId>> remap(graph.values_count());
+  std::vector<std::optional<ir::ValueId>> remap(old_graph.values_count());
+
+  ir::Graph new_graph;
+
+  // -----------------------------------------------------------------------------
+  // populate external inputs from old graph to new graph, fill remap for them
+  // ------------------------------------------------------------------------------
+  for (const auto old_input : old_graph.inputs()) {
+    const auto value = old_graph.value(old_input);
+    const auto new_v = new_graph.input(value.shape, value.dtype);
+
+    remap[old_input.value] = new_v;
+  }
 
   // -----------------------------------------------------------------------------
   // starting from all outputs of old graph, rewrite into new graph replacing
   // with fused node wherever possible
   // ------------------------------------------------------------------------------
-  ir::Graph new_graph;
-  for (const auto output : graph.outputs()) {
-    const auto new_out =
-        rewrite_value(output, graph, new_graph, use_count, is_output, remap);
+
+  for (const auto output : old_graph.outputs()) {
+    const auto new_out = rewrite_value(output, old_graph, new_graph, use_count,
+                                       is_output, remap);
     new_graph.add_output(new_out);
   }
 

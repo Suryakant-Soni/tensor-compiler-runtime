@@ -1,4 +1,5 @@
 #include "tcr/compiler/lowering.hpp"
+#include "tcr/ir/elementwise_expr.hpp"
 #include "tcr/ir/graph.hpp"
 #include "tcr/ir/ids.hpp"
 #include "tcr/ir/op.hpp"
@@ -7,7 +8,9 @@
 #include "tcr/lir/index.hpp"
 #include "tcr/lir/instruction.hpp"
 #include "tcr/lir/program.hpp"
+#include <cstddef>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -51,6 +54,8 @@ lir::BufferId Lowering::lower_value(const ir::Graph &graph,
     return lower_matmul(graph, value_id, program);
   case ir::Op::Sum:
     return lower_sum(graph, value_id, program);
+  case ir::Op::FusedElementwise:
+    return lower_fused_elementwise(graph, value_id, program);
   case ir::Op::Input:
     throw std::logic_error("Input value unexpectedly has a producer");
   }
@@ -143,6 +148,92 @@ lir::BufferId Lowering::lower_matmul(const ir::Graph &graph,
 
   lowered_value_to_buffer_.emplace(output_value_id, c_buffer);
   return c_buffer;
+}
+
+namespace {
+lir::ScalarId
+lower_elementwise_expression(const ir::ElementwiseExpr &expr,
+                             const std::vector<lir::ScalarId> &in_scalars,
+                             lir::For &i_loop, lir::Program &program) {
+  if (in_scalars.empty()) {
+    throw std::invalid_argument(
+        "input scalars are not supplied to lower elementwise expr");
+  }
+  if (expr.kind == ir::ElementwiseExprKind::Input) {
+    if (expr.input_index >= in_scalars.size()) {
+      throw std::out_of_range("input index is out of range");
+    }
+    return in_scalars[expr.input_index];
+  }
+  if (!expr.lhs || !expr.rhs) {
+    throw std::logic_error(
+        "elementwise expression op missing operand expression");
+  }
+  const auto scalar_lhs =
+      lower_elementwise_expression(*expr.lhs, in_scalars, i_loop, program);
+  const auto scalar_rhs =
+      lower_elementwise_expression(*expr.rhs, in_scalars, i_loop, program);
+
+  const auto out_scalar = program.create_scalar();
+  switch (expr.kind) {
+  case tcr::ir::ElementwiseExprKind::Add:
+    i_loop.body.emplace_back(lir::Add(scalar_lhs, scalar_rhs, out_scalar));
+    break;
+  case tcr::ir::ElementwiseExprKind::Mul:
+    i_loop.body.emplace_back(lir::Mul(scalar_lhs, scalar_rhs, out_scalar));
+    break;
+  default:
+    throw std::logic_error("unknow elementwise expression Kind");
+  }
+  return out_scalar;
+}
+} // namespace
+lir::BufferId Lowering::lower_fused_elementwise(const ir::Graph &graph,
+                                                lir::ValueId output_value_id,
+                                                lir::Program &program) {
+  const auto &value = graph.value(output_value_id);
+  const auto &node = graph.node(*value.producer);
+
+  if (!node.elementwise_expr.has_value()) {
+    throw std::invalid_argument(
+        "elementwise expression param does not have value inside");
+  }
+
+  // recursively lower all the inputs first
+  std::vector<lir::ScalarId> input_scalars;
+  input_scalars.reserve(node.inputs.size());
+
+  auto output_buffer = program.create_buffer(value.shape, value.dtype);
+
+  const auto i = program.create_index();
+  auto i_loop = std::make_unique<lir::For>();
+  i_loop->index = i;
+  i_loop->begin = lir::ConstantIndex{0};
+  i_loop->end = lir::ConstantIndex{value.shape.num_elements()};
+
+  for (std::size_t j = 0; j < node.inputs.size(); ++j) {
+    auto scalar = program.create_scalar();
+    auto buffer = lower_value(graph, node.inputs[j], program);
+
+    input_scalars.push_back(scalar);
+
+    // load statements;
+    i_loop->body.emplace_back(lir::Load(scalar, buffer, i));
+  }
+
+  // lower elementwise expression recursively
+  const auto out_scalar = lower_elementwise_expression(
+      *node.elementwise_expr, input_scalars, *i_loop, program);
+
+  // after getting the top most scalarid store the scalarid single slot in
+  // output
+  i_loop->body.emplace_back(lir::Store(out_scalar, output_buffer, i));
+
+  program.add_instruction(std::move(i_loop));
+
+  lowered_value_to_buffer_.emplace(output_value_id, output_buffer);
+
+  return output_buffer;
 }
 
 lir::BufferId Lowering::lower_elementwise_binary(const ir::Graph &graph,

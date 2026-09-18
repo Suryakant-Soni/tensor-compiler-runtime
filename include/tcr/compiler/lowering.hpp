@@ -32,6 +32,9 @@ private:
                              lir::Program &program);
   lir::BufferId lower_sum(const ir::Graph &graph, ir::ValueId output_value_id,
                           lir::Program &program);
+  lir::BufferId lower_fused_elementwise(const ir::Graph &graph,
+                                        lir::ValueId output_value_id,
+                                        lir::Program &program);
   lir::BufferId lower_elementwise_binary(const ir::Graph &graph,
                                          ir::ValueId output_value_id,
                                          lir::Program &program,
