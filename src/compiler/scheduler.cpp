@@ -118,8 +118,8 @@ std::vector<size_t> build_owner(const tcr::compiler::Schedule &schedule,
                                 size_t value_count) {
   constexpr size_t no_owner = std::numeric_limits<size_t>::max();
   std::vector<size_t> owner(value_count, no_owner);
-  for (size_t k = 0; k < schedule.Kernels.size(); ++k) {
-    for (const auto member : schedule.Kernels[k].members) {
+  for (size_t k = 0; k < schedule.kernels.size(); ++k) {
+    for (const auto member : schedule.kernels[k].members) {
       owner[member.value] = k;
     }
   }
@@ -141,14 +141,14 @@ void apply_grouping_policies(tcr::compiler::Schedule &schedule,
     }
   }
   for (const auto merge : merges) {
-    schedule.Kernels[owner[merge.first.value]].members.push_back(merge.second);
-    std::erase(schedule.Kernels[owner[merge.second.value]].members,
+    schedule.kernels[owner[merge.first.value]].members.push_back(merge.second);
+    std::erase(schedule.kernels[owner[merge.second.value]].members,
                merge.second);
     owner[merge.second.value] = owner[merge.first.value];
   }
   // after merges are done, remove all the empty kernels which do not have any
   // member
-  std::erase_if(schedule.Kernels,
+  std::erase_if(schedule.kernels,
                 [](const auto &kernel) { return kernel.members.empty(); });
 }
 
@@ -158,8 +158,8 @@ void recompute_boundaries(tcr::compiler::Schedule &schedule,
                           const Analysis &analysis,
                           const std::vector<size_t> &owner,
                           const tcr::ir::Graph &graph) {
-  for (size_t k = 0; k < schedule.Kernels.size(); k++) {
-    auto &kernel_unit = schedule.Kernels[k];
+  for (size_t k = 0; k < schedule.kernels.size(); k++) {
+    auto &kernel_unit = schedule.kernels[k];
     kernel_unit.boundary_inputs.clear();
     kernel_unit.materialized_outputs.clear();
     const auto &members = kernel_unit.members;

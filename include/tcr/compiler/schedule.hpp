@@ -11,6 +11,6 @@ struct KernelUnit {
 
 struct Schedule {
   // kernel units are executed in the vector order
-  std::vector<KernelUnit> Kernels;
+  std::vector<KernelUnit> kernels;
 };
 } // namespace tcr::compiler

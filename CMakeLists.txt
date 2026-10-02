@@ -39,6 +39,7 @@ add_library(tcr STATIC
     src/compiler/lowering.cpp
     src/compiler/program_emitter.cpp
     src/compiler/elementwise_fusion.cpp
+    src/compiler/scheduler.cpp
 
     src/runtime/tensor.cpp
     src/runtime/bindings.cpp
