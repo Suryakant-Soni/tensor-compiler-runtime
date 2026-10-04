@@ -1,17 +1,52 @@
-```text
-graph object with inputs,outputs and intermeditate values and operation nodes
+graph object
+(inputs, outputs, intermediate values, operation nodes)
     │
-    │ Compiler::compile(graph, outputs)
+    │ Compiler::compile(graph)
     ▼
 ┌─────────────────────────────┐
 │ High IR: ir::Graph          │
 │                             │
 │ ValueId, Node, Op           │
-│ Shape, Dtype                │
-│ e.g. MatMul(A, B)           │
+│ Shape, DType                │
+│                             │
+│ Add, Mul, MatMul, Sum       │
+│ FusedElementwise            │
 └─────────────┬───────────────┘
               │
-              │ Lowering::lower(graph, outputs)
+              │ ElementwiseFusion
+              │
+              ▼
+┌─────────────────────────────┐
+│ Optimized High IR           │
+│ ir::Graph                   │
+│                             │
+│ Eligible Add/Mul chains     │
+│ represented as              │
+│ FusedElementwise nodes      │
+└─────────────┬───────────────┘
+              │
+              │ Scheduler::schedule(graph)
+              ▼
+┌─────────────────────────────┐
+│ compiler::Schedule          │
+│                             │
+│ ordered KernelUnits         │
+│                             │
+│ members                     │
+│ boundary_inputs             │
+│ materialized_outputs        │
+│                             │
+│ decides:                    │
+│ - execution order           │
+│ - kernel grouping           │
+│ - materialization           │
+└─────────────┬───────────────┘
+              │
+              │ Lowering::lower(graph, schedule)
+              │
+              │ lowering obeys the schedule;
+              │ computed dependencies are not
+              │ recursively lowered
               ▼
 ┌─────────────────────────────┐
 │ Low IR: lir::Program        │
@@ -22,6 +57,10 @@ graph object with inputs,outputs and intermeditate values and operation nodes
 │                             │
 │ For, Load, Store,           │
 │ Add, Mul, IndexAdd...       │
+│                             │
+│ Grouped kernels may lower   │
+│ together so internal values │
+│ need not be materialized    │
 └─────────────┬───────────────┘
               │
               │ ProgramEmitter::emit(lir_program)
@@ -65,4 +104,3 @@ graph object with inputs,outputs and intermeditate values and operation nodes
               │
               ▼
         Output Tensor(s)
-```

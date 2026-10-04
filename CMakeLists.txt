@@ -76,6 +76,7 @@ add_executable(tcr_tests tests/ir/test_types.cpp
                          tests/compiler/test_lowering.cpp
                          tests/compiler/test_program_emitter.cpp
                          tests/compiler/test_elementwise_fusion.cpp
+                         tests/compiler/test_scheduler.cpp
 
                          tests/lir/test_program.cpp
 

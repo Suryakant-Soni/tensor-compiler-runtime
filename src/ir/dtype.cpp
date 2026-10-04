@@ -18,5 +18,6 @@ std::size_t size_in_bytes(Dtype dt) {
   case Dtype::F32:
     return 4;
   }
+  throw std::invalid_argument("unsupported type");
 }
 } // namespace tcr::ir

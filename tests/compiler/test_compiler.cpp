@@ -71,7 +71,7 @@ TEST_CASE("Compiler does not compile graph inputs when graph has no outputs") {
   Compiler compiler;
   const auto program = compiler.compile(graph);
 
-  // Lowering starts from graph outputs.
+  // Scheduling starts from graph outputs.
   // Nothing is reachable when there are no outputs.
   REQUIRE(program.inputs().empty());
   REQUIRE(program.outputs().empty());
@@ -518,6 +518,7 @@ TEST_CASE("Compiler Sum produces scalar output metadata") {
   graph.set_outputs({out});
 
   Compiler compiler;
+
   const auto program = compiler.compile(graph);
 
   REQUIRE(program.outputs()[0] == SlotId{1});
@@ -531,6 +532,151 @@ TEST_CASE("Compiler Sum produces scalar output metadata") {
 
   REQUIRE(store.buffer == SlotId{1});
   require_constant_operand(store.offset, 0);
+}
+
+// =============================================================================
+// PHASE 5: GROUPED ELEMENTWISE -> SUM
+// =============================================================================
+
+TEST_CASE("Compiler groups Add before Sum without materializing Add output") {
+  Graph graph;
+
+  const auto x = graph.input(Shape{4}, Dtype::F32);
+  const auto y = graph.input(Shape{4}, Dtype::F32);
+
+  const auto added = graph.add(x, y);
+  const auto out = graph.sum(added);
+
+  graph.set_outputs({out});
+
+  Compiler compiler;
+  const auto program = compiler.compile(graph);
+
+  // x, y and the scalar reduction output are materialized.
+  // There is no full Shape{4} buffer for `added`.
+  REQUIRE(program.slots_count() == 3);
+  REQUIRE(program.inputs().size() == 2);
+  REQUIRE(program.outputs().size() == 1);
+
+  const auto x_slot = program.get_slotid_from_valueid(x);
+  const auto y_slot = program.get_slotid_from_valueid(y);
+  const auto out_slot = program.outputs()[0];
+
+  REQUIRE(program.tensor_meta_by_slot(x_slot).shape == Shape{4});
+  REQUIRE(program.tensor_meta_by_slot(y_slot).shape == Shape{4});
+  REQUIRE(program.tensor_meta_by_slot(out_slot).shape == Shape{});
+
+  REQUIRE(program.scalar_count() == 4);
+  REQUIRE(program.index_count() == 1);
+
+  REQUIRE(program.instructions().size() == 8);
+
+  REQUIRE(program.instructions()[0].opcode == Opcode::Constant);
+  REQUIRE(program.instructions()[1].opcode == Opcode::LoopBegin);
+  REQUIRE(program.instructions()[2].opcode == Opcode::Load);
+  REQUIRE(program.instructions()[3].opcode == Opcode::Load);
+  REQUIRE(program.instructions()[4].opcode == Opcode::Add);
+  REQUIRE(program.instructions()[5].opcode == Opcode::Add);
+  REQUIRE(program.instructions()[6].opcode == Opcode::LoopEnd);
+  REQUIRE(program.instructions()[7].opcode == Opcode::Store);
+
+  REQUIRE(program.instructions()[2].buffer == x_slot);
+  REQUIRE(program.instructions()[3].buffer == y_slot);
+  REQUIRE(program.instructions()[7].buffer == out_slot);
+}
+
+TEST_CASE("Compiler groups Mul before Sum without materializing Mul output") {
+  Graph graph;
+
+  const auto x = graph.input(Shape{5}, Dtype::F32);
+  const auto y = graph.input(Shape{5}, Dtype::F32);
+
+  const auto product = graph.mul(x, y);
+  const auto out = graph.sum(product);
+
+  graph.set_outputs({out});
+
+  Compiler compiler;
+  const auto program = compiler.compile(graph);
+
+  REQUIRE(program.slots_count() == 3);
+  REQUIRE(program.inputs().size() == 2);
+  REQUIRE(program.outputs().size() == 1);
+
+  const auto x_slot = program.get_slotid_from_valueid(x);
+  const auto y_slot = program.get_slotid_from_valueid(y);
+  const auto out_slot = program.outputs()[0];
+
+  REQUIRE(program.tensor_meta_by_slot(x_slot).shape == Shape{5});
+  REQUIRE(program.tensor_meta_by_slot(y_slot).shape == Shape{5});
+  REQUIRE(program.tensor_meta_by_slot(out_slot).shape == Shape{});
+
+  REQUIRE(program.instructions().size() == 8);
+
+  REQUIRE(program.instructions()[0].opcode == Opcode::Constant);
+  REQUIRE(program.instructions()[1].opcode == Opcode::LoopBegin);
+  REQUIRE(program.instructions()[2].opcode == Opcode::Load);
+  REQUIRE(program.instructions()[3].opcode == Opcode::Load);
+  REQUIRE(program.instructions()[4].opcode == Opcode::Mul);
+  REQUIRE(program.instructions()[5].opcode == Opcode::Add);
+  REQUIRE(program.instructions()[6].opcode == Opcode::LoopEnd);
+  REQUIRE(program.instructions()[7].opcode == Opcode::Store);
+
+  REQUIRE(program.instructions()[2].buffer == x_slot);
+  REQUIRE(program.instructions()[3].buffer == y_slot);
+  REQUIRE(program.instructions()[7].buffer == out_slot);
+}
+
+TEST_CASE("Compiler groups fused elementwise expression before Sum without "
+          "intermediate tensor") {
+  Graph graph;
+
+  const auto x = graph.input(Shape{4}, Dtype::F32);
+  const auto y = graph.input(Shape{4}, Dtype::F32);
+  const auto z = graph.input(Shape{4}, Dtype::F32);
+
+  const auto product = graph.mul(x, y);
+  const auto mapped = graph.add(product, z);
+  const auto out = graph.sum(mapped);
+
+  graph.set_outputs({out});
+
+  Compiler compiler;
+  const auto program = compiler.compile(graph);
+
+  // Phase 4 fuses Mul -> Add. Phase 5 groups the fused value with Sum.
+  // Only x, y, z and the scalar reduction output are materialized.
+  REQUIRE(program.slots_count() == 4);
+  REQUIRE(program.inputs().size() == 3);
+  REQUIRE(program.outputs().size() == 1);
+
+  const auto x_slot = program.get_slotid_from_valueid(x);
+  const auto y_slot = program.get_slotid_from_valueid(y);
+  const auto z_slot = program.get_slotid_from_valueid(z);
+  const auto out_slot = program.outputs()[0];
+
+  REQUIRE(program.tensor_meta_by_slot(x_slot).shape == Shape{4});
+  REQUIRE(program.tensor_meta_by_slot(y_slot).shape == Shape{4});
+  REQUIRE(program.tensor_meta_by_slot(z_slot).shape == Shape{4});
+  REQUIRE(program.tensor_meta_by_slot(out_slot).shape == Shape{});
+
+  REQUIRE(program.instructions().size() == 10);
+
+  REQUIRE(program.instructions()[0].opcode == Opcode::Constant);
+  REQUIRE(program.instructions()[1].opcode == Opcode::LoopBegin);
+  REQUIRE(program.instructions()[2].opcode == Opcode::Load);
+  REQUIRE(program.instructions()[3].opcode == Opcode::Load);
+  REQUIRE(program.instructions()[4].opcode == Opcode::Load);
+  REQUIRE(program.instructions()[5].opcode == Opcode::Mul);
+  REQUIRE(program.instructions()[6].opcode == Opcode::Add);
+  REQUIRE(program.instructions()[7].opcode == Opcode::Add);
+  REQUIRE(program.instructions()[8].opcode == Opcode::LoopEnd);
+  REQUIRE(program.instructions()[9].opcode == Opcode::Store);
+
+  REQUIRE(program.instructions()[2].buffer == x_slot);
+  REQUIRE(program.instructions()[3].buffer == y_slot);
+  REQUIRE(program.instructions()[4].buffer == z_slot);
+  REQUIRE(program.instructions()[9].buffer == out_slot);
 }
 
 // =============================================================================
@@ -883,28 +1029,18 @@ TEST_CASE(
   Compiler compiler;
   const auto program = compiler.compile(graph);
 
-  // shared has two consumers, so it remains materialized.
-  // left and right are single-use and are absorbed into the root fused node.
-  //
-  // slot 0 = fused output
-  // slot 1 = x
-  // slot 2 = y
-  // slot 3 = shared
-  // slot 4 = z
   REQUIRE(program.slots_count() == 5);
-
   REQUIRE(program.inputs().size() == 3);
-  REQUIRE(program.get_slotid_from_valueid(x) == SlotId{1});
-  REQUIRE(program.get_slotid_from_valueid(y) == SlotId{2});
-  REQUIRE(program.get_slotid_from_valueid(z) == SlotId{4});
-
   REQUIRE(program.outputs().size() == 1);
-  REQUIRE(program.outputs()[0] == SlotId{0});
 
-  // One normal Mul loop for shared + one fused loop for the diamond consumers.
+  const auto x_slot = program.get_slotid_from_valueid(x);
+  const auto y_slot = program.get_slotid_from_valueid(y);
+  const auto z_slot = program.get_slotid_from_valueid(z);
+  const auto out_slot = program.outputs()[0];
+
+  // One normal Mul loop for `shared`, followed by one fused loop.
   REQUIRE(program.instructions().size() == 16);
 
-  // shared = x * y
   REQUIRE(program.instructions()[0].opcode == Opcode::LoopBegin);
   REQUIRE(program.instructions()[1].opcode == Opcode::Load);
   REQUIRE(program.instructions()[2].opcode == Opcode::Load);
@@ -912,30 +1048,35 @@ TEST_CASE(
   REQUIRE(program.instructions()[4].opcode == Opcode::Store);
   REQUIRE(program.instructions()[5].opcode == Opcode::LoopEnd);
 
-  REQUIRE(program.instructions()[4].buffer == SlotId{3});
+  REQUIRE(program.instructions()[1].buffer == x_slot);
+  REQUIRE(program.instructions()[2].buffer == y_slot);
 
-  // Fused root:
-  // Add(Add(shared, z), Mul(shared, z))
+  // Derive the materialized shared slot from the producer Store instead of
+  // assuming the old recursive-lowering SlotId allocation order.
+  const auto shared_slot = program.instructions()[4].buffer;
+
+  REQUIRE(program.tensor_meta_by_slot(shared_slot).shape == Shape{2});
+
   REQUIRE(program.instructions()[6].opcode == Opcode::LoopBegin);
 
   REQUIRE(program.instructions()[7].opcode == Opcode::Load);
-  REQUIRE(program.instructions()[7].buffer == SlotId{3});
+  REQUIRE(program.instructions()[7].buffer == shared_slot);
 
   REQUIRE(program.instructions()[8].opcode == Opcode::Load);
-  REQUIRE(program.instructions()[8].buffer == SlotId{4});
+  REQUIRE(program.instructions()[8].buffer == z_slot);
 
   REQUIRE(program.instructions()[9].opcode == Opcode::Load);
-  REQUIRE(program.instructions()[9].buffer == SlotId{3});
+  REQUIRE(program.instructions()[9].buffer == shared_slot);
 
   REQUIRE(program.instructions()[10].opcode == Opcode::Load);
-  REQUIRE(program.instructions()[10].buffer == SlotId{4});
+  REQUIRE(program.instructions()[10].buffer == z_slot);
 
   REQUIRE(program.instructions()[11].opcode == Opcode::Add);
   REQUIRE(program.instructions()[12].opcode == Opcode::Mul);
   REQUIRE(program.instructions()[13].opcode == Opcode::Add);
 
   REQUIRE(program.instructions()[14].opcode == Opcode::Store);
-  REQUIRE(program.instructions()[14].buffer == SlotId{0});
+  REQUIRE(program.instructions()[14].buffer == out_slot);
 
   REQUIRE(program.instructions()[15].opcode == Opcode::LoopEnd);
 }
@@ -948,11 +1089,9 @@ TEST_CASE("Compiler preserves multiple computed output ordering") {
   Graph graph;
 
   const auto x = graph.input(Shape{2}, Dtype::F32);
-
   const auto y = graph.input(Shape{2}, Dtype::F32);
 
   const auto add_result = graph.add(x, y);
-
   const auto mul_result = graph.mul(x, y);
 
   graph.set_outputs({
@@ -966,13 +1105,26 @@ TEST_CASE("Compiler preserves multiple computed output ordering") {
   REQUIRE(program.outputs().size() == 2);
   REQUIRE(program.instructions().size() == 12);
 
-  // mul_result is lowered first because it is first in outputs.
-  REQUIRE(program.instructions()[3].opcode == Opcode::Mul);
+  // Both independent kernels must be emitted exactly once. Their execution
+  // order does not have to be identical to graph output ordering.
+  std::size_t add_count = 0;
+  std::size_t mul_count = 0;
 
-  REQUIRE(program.instructions()[9].opcode == Opcode::Add);
+  for (const auto &instruction : program.instructions()) {
+    if (instruction.opcode == Opcode::Add) {
+      ++add_count;
+    } else if (instruction.opcode == Opcode::Mul) {
+      ++mul_count;
+    }
+  }
 
-  REQUIRE(program.outputs()[0] == SlotId{2});
-  REQUIRE(program.outputs()[1] == SlotId{3});
+  REQUIRE(add_count == 1);
+  REQUIRE(mul_count == 1);
+
+  // Requested graph output order is still preserved by the runtime program.
+  REQUIRE(program.outputs()[0] != program.outputs()[1]);
+  REQUIRE(program.tensor_meta_by_slot(program.outputs()[0]).shape == Shape{2});
+  REQUIRE(program.tensor_meta_by_slot(program.outputs()[1]).shape == Shape{2});
 }
 
 TEST_CASE("Compiler reuses same runtime slot for duplicate graph output") {
@@ -1085,8 +1237,7 @@ TEST_CASE("Compiler excludes unreachable input and dependency subtree") {
   Compiler compiler;
   const auto program = compiler.compile(graph);
 
-  // Current lowering is output-driven.
-  // z belongs only to the dead subtree.
+  // z belongs only to the unreachable subtree and must not reach runtime.
   REQUIRE(program.inputs().size() == 2);
 
   REQUIRE(program.inputs()[0].value_id == x);
@@ -1168,7 +1319,8 @@ TEST_CASE("Compiler propagates MatMul result metadata into dependent Add") {
 // Longer mixed dependency chain
 // =============================================================================
 
-TEST_CASE("Compiler fuses longer elementwise chain before reduction") {
+TEST_CASE(
+    "Compiler fuses and groups longer elementwise chain before reduction") {
   Graph graph;
 
   const auto x = graph.input(Shape{4}, Dtype::F32);
@@ -1184,70 +1336,47 @@ TEST_CASE("Compiler fuses longer elementwise chain before reduction") {
   Compiler compiler;
   const auto program = compiler.compile(graph);
 
-  // a, b and c become one fused elementwise value.
-  //
-  // slot 0 = fused c
-  // slot 1 = x
-  // slot 2 = y
-  // slot 3 = scalar Sum output
-  REQUIRE(program.slots_count() == 4);
-
+  // Phase 4 forms one FusedElementwise value.
+  // Phase 5 groups that value with Sum.
+  // Only x, y and the scalar output are materialized.
+  REQUIRE(program.slots_count() == 3);
   REQUIRE(program.inputs().size() == 2);
-  REQUIRE(program.get_slotid_from_valueid(x) == SlotId{1});
-  REQUIRE(program.get_slotid_from_valueid(y) == SlotId{2});
-
   REQUIRE(program.outputs().size() == 1);
-  REQUIRE(program.outputs()[0] == SlotId{3});
 
-  REQUIRE(program.tensor_meta_by_slot(SlotId{0}).shape == Shape{4});
-  REQUIRE(program.tensor_meta_by_slot(SlotId{3}).shape == Shape{});
+  const auto x_slot = program.get_slotid_from_valueid(x);
+  const auto y_slot = program.get_slotid_from_valueid(y);
+  const auto out_slot = program.outputs()[0];
 
-  /*
-   * Fused loop = 10 runtime instructions:
-   *
-   * LoopBegin
-   * Load x
-   * Load y
-   * Load x
-   * Load y
-   * Mul
-   * Add
-   * Mul
-   * Store
-   * LoopEnd
-   *
-   * Sum = 6 runtime instructions:
-   *
-   * Constant
-   * LoopBegin
-   * Load
-   * Add
-   * LoopEnd
-   * Store
-   */
-  REQUIRE(program.instructions().size() == 16);
+  REQUIRE(program.tensor_meta_by_slot(x_slot).shape == Shape{4});
+  REQUIRE(program.tensor_meta_by_slot(y_slot).shape == Shape{4});
+  REQUIRE(program.tensor_meta_by_slot(out_slot).shape == Shape{});
 
-  REQUIRE(program.instructions()[0].opcode == Opcode::LoopBegin);
-  REQUIRE(program.instructions()[1].opcode == Opcode::Load);
+  REQUIRE(program.scalar_count() == 8);
+  REQUIRE(program.index_count() == 1);
+
+  REQUIRE(program.instructions().size() == 12);
+
+  REQUIRE(program.instructions()[0].opcode == Opcode::Constant);
+  REQUIRE(program.instructions()[1].opcode == Opcode::LoopBegin);
+
   REQUIRE(program.instructions()[2].opcode == Opcode::Load);
   REQUIRE(program.instructions()[3].opcode == Opcode::Load);
   REQUIRE(program.instructions()[4].opcode == Opcode::Load);
-  REQUIRE(program.instructions()[5].opcode == Opcode::Mul);
-  REQUIRE(program.instructions()[6].opcode == Opcode::Add);
-  REQUIRE(program.instructions()[7].opcode == Opcode::Mul);
-  REQUIRE(program.instructions()[8].opcode == Opcode::Store);
-  REQUIRE(program.instructions()[9].opcode == Opcode::LoopEnd);
+  REQUIRE(program.instructions()[5].opcode == Opcode::Load);
 
-  REQUIRE(program.instructions()[8].buffer == SlotId{0});
+  REQUIRE(program.instructions()[6].opcode == Opcode::Mul);
+  REQUIRE(program.instructions()[7].opcode == Opcode::Add);
+  REQUIRE(program.instructions()[8].opcode == Opcode::Mul);
+  REQUIRE(program.instructions()[9].opcode == Opcode::Add);
 
-  REQUIRE(program.instructions()[10].opcode == Opcode::Constant);
-  REQUIRE(program.instructions()[11].opcode == Opcode::LoopBegin);
-  REQUIRE(program.instructions()[12].opcode == Opcode::Load);
-  REQUIRE(program.instructions()[12].buffer == SlotId{0});
-  REQUIRE(program.instructions()[13].opcode == Opcode::Add);
-  REQUIRE(program.instructions()[14].opcode == Opcode::LoopEnd);
-  REQUIRE(program.instructions()[15].opcode == Opcode::Store);
-  REQUIRE(program.instructions()[15].buffer == SlotId{3});
+  REQUIRE(program.instructions()[10].opcode == Opcode::LoopEnd);
+  REQUIRE(program.instructions()[11].opcode == Opcode::Store);
+  REQUIRE(program.instructions()[11].buffer == out_slot);
+
+  REQUIRE(program.instructions()[2].buffer == x_slot);
+  REQUIRE(program.instructions()[3].buffer == y_slot);
+  REQUIRE(program.instructions()[4].buffer == x_slot);
+  REQUIRE(program.instructions()[5].buffer == y_slot);
 }
 
 // =============================================================================

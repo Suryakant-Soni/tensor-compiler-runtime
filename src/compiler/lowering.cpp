@@ -32,11 +32,6 @@ bool is_elementwise_sum_group(const KernelUnit &kernel,
   const auto &first_node = graph.node(*first_value.producer);
   const auto &second_node = graph.node(*second_value.producer);
 
-  if (second_node.inputs.size() != 1) {
-    throw std::logic_error(
-        "sum should have only one input : is_elementwise_sum_group");
-  }
-
   if (first_node.op != ir::Op::Add && first_node.op != ir::Op::Mul &&
       first_node.op != ir::Op::FusedElementwise) {
     return false;
@@ -44,8 +39,26 @@ bool is_elementwise_sum_group(const KernelUnit &kernel,
   if (second_node.op != ir::Op::Sum || second_node.inputs[0] != first_member) {
     return false;
   }
+  if (second_node.inputs.size() != 1) {
+    throw std::logic_error(
+        "sum should have only one input : is_elementwise_sum_group");
+  }
   return true;
 }
+
+void validate_schedule(const Schedule &schedule, std::size_t values_count) {
+  std::vector<bool> seen(values_count, false);
+  for (const auto &kernel : schedule.kernels) {
+    for (const auto member : kernel.members) {
+      if (seen[member.value]) {
+        throw std::logic_error(
+            "member valueid appears in more than one kernel");
+      }
+      seen[member.value] = true;
+    }
+  }
+}
+
 } // namespace
 
 // manages returning buffer for inputs and computed values from previous kernels
@@ -70,6 +83,7 @@ lir::BufferId Lowering::require_buffer(const ir::Graph &graph,
 lir::Program Lowering::lower(const ir::Graph &graph, const Schedule &schedule) {
 
   valueid_to_bufferid_.clear();
+  validate_schedule(schedule, graph.values_count());
   lir::Program program;
 
   for (const auto &kernel : schedule.kernels) {
@@ -245,7 +259,7 @@ lower_elementwise_expression(const ir::ElementwiseExpr &expr,
 }
 } // namespace
 lir::BufferId Lowering::lower_fused_elementwise(const ir::Graph &graph,
-                                                lir::ValueId output_value_id,
+                                                ir::ValueId output_value_id,
                                                 lir::Program &program) {
 
   const auto &value = graph.value(output_value_id);

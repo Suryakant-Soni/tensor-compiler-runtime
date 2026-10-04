@@ -25,7 +25,6 @@ void visit(tcr::ir::ValueId value_id, Analysis &analysis,
     return;
   }
   analysis.is_reachable[value_id.value] = true;
-  analysis.is_reachable[value_id.value] = true;
   const auto &value = graph.value(value_id);
   if (!value.producer.has_value()) {
     return;
@@ -47,7 +46,6 @@ void visit(tcr::ir::ValueId value_id, Analysis &analysis,
 
 // preparing analysis records for a graph and its values
 Analysis analyze(const tcr::ir::Graph &graph) {
-  std::vector<bool> visited(graph.values_count(), false);
   Analysis analysis;
   const auto value_count = graph.values_count();
   analysis.is_graph_output.resize(value_count, false);
@@ -69,8 +67,7 @@ tcr::compiler::Schedule create_singleton_partition(const tcr::ir::Graph &graph,
   for (const auto topo_value : analysis.topological_values) {
     const auto &value = graph.value(topo_value);
     if (!value.producer.has_value()) {
-      throw std::logic_error("topological values of analysis should have "
-                             "inputs assigned to the node");
+      throw std::logic_error("topological values of analysis has no producer");
     }
     tcr::compiler::KernelUnit kernel_unit;
     kernel_unit.members.push_back(topo_value);
@@ -135,12 +132,13 @@ void apply_grouping_policies(tcr::compiler::Schedule &schedule,
   std::vector<std::pair<tcr::ir::ValueId, tcr::ir::ValueId>> merges;
   for (const auto producer : analysis.topological_values) {
     for (const auto consumer : analysis.consumers[producer.value]) {
+      // sum is the only consumer, producer is elementwise
       if (can_group_elementwise_sum(producer, consumer, graph, analysis)) {
         merges.push_back({producer, consumer});
       }
     }
   }
-  for (const auto merge : merges) {
+  for (const auto &merge : merges) {
     schedule.kernels[owner[merge.first.value]].members.push_back(merge.second);
     std::erase(schedule.kernels[owner[merge.second.value]].members,
                merge.second);
@@ -158,6 +156,11 @@ void recompute_boundaries(tcr::compiler::Schedule &schedule,
                           const Analysis &analysis,
                           const std::vector<size_t> &owner,
                           const tcr::ir::Graph &graph) {
+  // -----------------------------------------------------------------------------
+  // loop kernels and then loop kernel,members; check node inputs for each
+  // member; if the inputs are not computed ones ie coming from previous
+  // kernals, add them to boundary inputs
+  // ------------------------------------------------------------------------------
   for (size_t k = 0; k < schedule.kernels.size(); k++) {
     auto &kernel_unit = schedule.kernels[k];
     kernel_unit.boundary_inputs.clear();
@@ -181,16 +184,29 @@ void recompute_boundaries(tcr::compiler::Schedule &schedule,
           }
         }
       }
+
+      // -----------------------------------------------------------------------------
       // for each member check if it is the output to be materialized
+      // ------------------------------------------------------------------------------
+
       if (analysis.is_graph_output[member.value]) {
         kernel_unit.materialized_outputs.emplace_back(member);
         continue;
       }
-      // find all the consumers of this member in the wholge graph
+
+      // -----------------------------------------------------------------------------
+      // even if member is not graph output; if it is consumed by any other
+      // kernel in whole graph it needs to be materialized
+      // ------------------------------------------------------------------------------
       const auto &consumers = analysis.consumers[member.value];
       // if any consumer lies in any other kernel than the value needs to be
       // materialized
       for (const auto consumer : consumers) {
+        if (owner[consumer.value] == std::numeric_limits<size_t>::max()) {
+          throw std::logic_error(
+              "schedule is broken because consumer in context does not "
+              "have any kernel allocated");
+        }
         if (owner[consumer.value] != k) {
           kernel_unit.materialized_outputs.emplace_back(member);
           break;

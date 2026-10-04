@@ -1245,6 +1245,8 @@ TEST_CASE(
 
   const auto actual_outputs = compile_and_run(graph, runtime_inputs);
 
+  REQUIRE(actual_outputs.size() == 1);
+
   require_same_tensor(expected, actual_outputs[0]);
 
   REQUIRE(actual_outputs[0].shape() == Shape{});
@@ -1289,9 +1291,81 @@ TEST_CASE(
 
   const auto actual_outputs = compile_and_run(graph, runtime_inputs);
 
+  REQUIRE(actual_outputs.size() == 1);
+
   require_same_tensor(expected, actual_outputs[0]);
 
+  REQUIRE(actual_outputs[0].shape() == Shape{});
   REQUIRE(actual_outputs[0].load(0) == 21.0F);
+}
+
+TEST_CASE(
+    "Compiler and VM preserve elementwise producer shared by Sum and another "
+    "consumer") {
+
+  Graph graph;
+
+  const auto x = graph.input(Shape{3}, Dtype::F32);
+  const auto y = graph.input(Shape{3}, Dtype::F32);
+  const auto z = graph.input(Shape{3}, Dtype::F32);
+
+  const auto shared = graph.add(x, y);
+  const auto reduced = graph.sum(shared);
+  const auto other = graph.mul(shared, z);
+
+  // `shared` has two reachable consumers. Under the current conservative
+  // Phase-5 policy it must not be absorbed only into the Sum kernel.
+  graph.set_outputs({
+      reduced,
+      other,
+  });
+
+  reference::InputBindings reference_inputs;
+  RuntimeInputs runtime_inputs;
+
+  bind_input(reference_inputs, runtime_inputs, x, Shape{3},
+             {
+                 1.0F,
+                 2.0F,
+                 3.0F,
+             });
+
+  bind_input(reference_inputs, runtime_inputs, y, Shape{3},
+             {
+                 4.0F,
+                 5.0F,
+                 6.0F,
+             });
+
+  bind_input(reference_inputs, runtime_inputs, z, Shape{3},
+             {
+                 2.0F,
+                 3.0F,
+                 4.0F,
+             });
+
+  reference::Interpreter interpreter;
+
+  const auto expected_reduced =
+      interpreter.run(graph, reduced, reference_inputs);
+
+  const auto expected_other = interpreter.run(graph, other, reference_inputs);
+
+  const auto actual_outputs = compile_and_run(graph, runtime_inputs);
+
+  REQUIRE(actual_outputs.size() == 2);
+
+  require_same_tensor(expected_reduced, actual_outputs[0]);
+  require_same_tensor(expected_other, actual_outputs[1]);
+
+  REQUIRE(actual_outputs[0].shape() == Shape{});
+  REQUIRE(actual_outputs[0].load(0) == 21.0F);
+
+  REQUIRE(actual_outputs[1].data() == std::vector<float>{
+                                          10.0F,
+                                          21.0F,
+                                          36.0F,
+                                      });
 }
 
 // =============================================================================
@@ -1299,7 +1373,8 @@ TEST_CASE(
 // =============================================================================
 
 TEST_CASE(
-    "Compiler and VM match reference interpreter for mixed operation chain") {
+    "Compiler and VM match reference interpreter for fused elementwise chain "
+    "followed by Sum") {
 
   Graph graph;
 
@@ -1350,6 +1425,7 @@ TEST_CASE(
   require_same_tensor(expected, actual_outputs[0]);
 
   REQUIRE(actual_outputs[0].shape() == Shape{});
+  REQUIRE(actual_outputs[0].load(0) == 206.0F);
 }
 
 // =============================================================================
@@ -1997,6 +2073,9 @@ TEST_CASE("Compiler and VM support tensor and scalar outputs in same program") {
 
   const auto reduced = graph.sum(added);
 
+  // `added` is itself a graph output as well as the input to Sum. Under the
+  // current Phase-5 policy it remains materialized rather than being grouped
+  // away as an internal-only intermediate.
   graph.set_outputs({
       added,
       reduced,
@@ -2039,11 +2118,11 @@ TEST_CASE("Compiler and VM support tensor and scalar outputs in same program") {
 }
 
 // =============================================================================
-// Output ordering changes traversal order
+// Output ordering
 // =============================================================================
 
-TEST_CASE("Compiler and VM preserve output ordering when output order drives "
-          "lowering") {
+TEST_CASE("Compiler and VM preserve requested graph output ordering through "
+          "scheduling and lowering") {
 
   Graph graph;
 
