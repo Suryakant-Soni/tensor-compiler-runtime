@@ -21,7 +21,7 @@
 namespace tcr::runtime {
 
 struct SlotTensorInfo {
-  SlotId id;
+  SlotId slot_id;
   ir::Shape shape;
   ir::Dtype dtype;
 };

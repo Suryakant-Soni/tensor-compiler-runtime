@@ -12,6 +12,7 @@
 
 #include "tcr/ir/dtype.hpp"
 #include "tcr/ir/shape.hpp"
+#include "tcr/runtime/storage.hpp"
 #include <cstddef>
 #include <memory>
 #include <vector>
@@ -23,13 +24,13 @@ public:
   Tensor(Shape shape, Dtype dtype, std::vector<float> data);
   const Shape &shape() const;
   Dtype dtype() const;
-  const std::vector<float> &data() const;
+  const std::vector<float> data() const;
   float load(std::size_t offset) const;
   void store(std::size_t offset, float value);
 
 private:
   Shape shape_;
   Dtype dtype_;
-  std::shared_ptr<std::vector<float>> data_;
+  std::shared_ptr<RuntimeStorage> storage_;
 };
 } // namespace tcr::runtime

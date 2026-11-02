@@ -64,7 +64,7 @@ TEST_CASE("runtime Program stores slot metadata") {
 
   const auto &info = program.tensor_meta_by_slot(SlotId{0});
 
-  REQUIRE(info.id == SlotId{0});
+  REQUIRE(info.slot_id == SlotId{0});
   REQUIRE(info.shape == Shape{3});
   REQUIRE(info.dtype == Dtype::F32);
 }
@@ -103,15 +103,15 @@ TEST_CASE("runtime Program stores metadata for multiple slots") {
 
   const auto &third = program.tensor_meta_by_slot(SlotId{2});
 
-  REQUIRE(first.id == SlotId{0});
+  REQUIRE(first.slot_id == SlotId{0});
   REQUIRE(first.shape == Shape{2});
   REQUIRE(first.dtype == Dtype::F32);
 
-  REQUIRE(second.id == SlotId{1});
+  REQUIRE(second.slot_id == SlotId{1});
   REQUIRE(second.shape == Shape{2, 3});
   REQUIRE(second.dtype == Dtype::F32);
 
-  REQUIRE(third.id == SlotId{2});
+  REQUIRE(third.slot_id == SlotId{2});
   REQUIRE(third.shape == Shape{});
   REQUIRE(third.dtype == Dtype::F32);
 }

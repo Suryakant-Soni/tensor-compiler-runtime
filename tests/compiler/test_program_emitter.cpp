@@ -72,13 +72,13 @@ TEST_CASE("ProgramEmitter maps BufferId to same-numbered SlotId") {
   ProgramEmitter emitter;
   const auto rt_program = emitter.emit(lir_program);
 
-  REQUIRE(rt_program.tensor_meta_by_slot(runtime::SlotId{0}).id ==
+  REQUIRE(rt_program.tensor_meta_by_slot(runtime::SlotId{0}).slot_id ==
           runtime::SlotId{0});
 
-  REQUIRE(rt_program.tensor_meta_by_slot(runtime::SlotId{1}).id ==
+  REQUIRE(rt_program.tensor_meta_by_slot(runtime::SlotId{1}).slot_id ==
           runtime::SlotId{1});
 
-  REQUIRE(rt_program.tensor_meta_by_slot(runtime::SlotId{2}).id ==
+  REQUIRE(rt_program.tensor_meta_by_slot(runtime::SlotId{2}).slot_id ==
           runtime::SlotId{2});
 }
 

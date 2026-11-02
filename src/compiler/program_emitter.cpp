@@ -12,10 +12,10 @@
 #include <utility>
 #include <variant>
 #include <vector>
+
 namespace tcr::compiler {
 namespace {
 runtime::IndexId to_runtime_index_id(lir::IndexId id) {
-
   return runtime::IndexId{id.value};
 }
 runtime::ScalarId to_runtime_scalar_id(lir::ScalarId id) {
@@ -56,14 +56,14 @@ void emit_instruction(
           rt_instructions.push_back(runtime::Instruction{
               .opcode = runtime::Opcode::Load,
               .scalar_dst = to_runtime_scalar_id(op.dst),
-              .buffer = buffer_to_slot[op.buffer_src.value].id,
+              .buffer = buffer_to_slot[op.buffer_src.value].slot_id,
               .offset = to_runtime_index_operand(op.offset),
           });
         } else if constexpr (std::is_same_v<T, lir::Store>) {
           rt_instructions.push_back(runtime::Instruction{
               .opcode = runtime::Opcode::Store,
               .scalar_lhs = to_runtime_scalar_id(op.value),
-              .buffer = buffer_to_slot[op.buffer_dst.value].id,
+              .buffer = buffer_to_slot[op.buffer_dst.value].slot_id,
               .offset = to_runtime_index_operand(op.offset),
           });
         } else if constexpr (std::is_same_v<T, lir::Add>) {
@@ -129,7 +129,7 @@ runtime::Program ProgramEmitter::emit(const lir::Program &lir_program) {
   std::vector<runtime::ValueIdSlotIdInput> rt_inputs;
   std::vector<runtime::SlotId> rt_outputs;
 
-  // index = bufferid and value = slotid
+  // index = bufferid and value = slotid & tensor info
   std::vector<runtime::SlotTensorInfo> buffer_to_slot;
 
   // fillup buffer_to_slot
@@ -144,12 +144,13 @@ runtime::Program ProgramEmitter::emit(const lir::Program &lir_program) {
 
   for (const auto &lir_input : lir_program.inputs()) {
     rt_inputs.push_back(runtime::ValueIdSlotIdInput{
-        lir_input.value, buffer_to_slot[lir_input.buffer.value].id});
+        lir_input.value, buffer_to_slot[lir_input.buffer.value].slot_id});
   }
 
   for (const auto &lir_output : lir_program.outputs()) {
-    rt_outputs.push_back(buffer_to_slot[lir_output.value].id);
+    rt_outputs.push_back(buffer_to_slot[lir_output.value].slot_id);
   }
+
   // for populating runtime instructions from lir/lowered instructions
   for (const auto &lir_instruc : lir_program.instructions()) {
     emit_instruction(lir_instruc, rt_instructions, buffer_to_slot);

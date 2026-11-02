@@ -112,7 +112,7 @@ TEST_CASE("Compiler compiles graph input directly as runtime output") {
 
   const auto &info = program.tensor_meta_by_slot(SlotId{0});
 
-  REQUIRE(info.id == SlotId{0});
+  REQUIRE(info.slot_id == SlotId{0});
   REQUIRE(info.shape == Shape{3});
   REQUIRE(info.dtype == Dtype::F32);
 }
@@ -1401,7 +1401,7 @@ TEST_CASE("Compiler runtime slot metadata remains aligned with slot ids") {
   REQUIRE(program.slots_count() == 3);
 
   for (std::size_t i = 0; i < program.slots_count(); ++i) {
-    REQUIRE(program.tensor_meta_by_slot(SlotId{i}).id == SlotId{i});
+    REQUIRE(program.tensor_meta_by_slot(SlotId{i}).slot_id == SlotId{i});
   }
 }
 
