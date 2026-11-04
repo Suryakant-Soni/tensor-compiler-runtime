@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "tcr/compiler/memory_plan.hpp"
 #include "tcr/compiler/program_emitter.hpp"
 #include "tcr/ir/dtype.hpp"
 #include "tcr/ir/shape.hpp"
@@ -24,6 +25,41 @@ using tcr::ir::ValueId;
 namespace lir = tcr::lir;
 namespace runtime = tcr::runtime;
 
+namespace {
+
+tcr::compiler::MemoryPlan unique_memory_plan(const lir::Program &program) {
+  tcr::compiler::MemoryPlan plan;
+  plan.buffer_to_slot.resize(program.buffer_count());
+
+  std::vector<bool> is_input(program.buffer_count(), false);
+  for (const auto &input : program.inputs()) {
+    is_input[input.buffer.value] = true;
+  }
+
+  for (std::size_t b = 0; b < program.buffer_count(); ++b) {
+    if (is_input[b]) {
+      continue;
+    }
+
+    const auto &buffer = program.buffers()[b];
+    const auto planner_slot = runtime::SlotId{plan.slots.size()};
+    plan.buffer_to_slot[b] = planner_slot;
+    plan.slots.push_back(tcr::compiler::StorageSlot{
+        tcr::ir::size_in_bytes(buffer.dtype) * buffer.shape.num_elements(),
+        alignof(std::max_align_t),
+    });
+  }
+
+  return plan;
+}
+
+runtime::Program emit_with_unique_slots(const lir::Program &program) {
+  ProgramEmitter emitter;
+  return emitter.emit(program, unique_memory_plan(program));
+}
+
+} // namespace
+
 // -----------------------------------------------------------------------------
 // Empty program
 // -----------------------------------------------------------------------------
@@ -32,7 +68,7 @@ TEST_CASE("ProgramEmitter emits empty runtime Program from empty LIR Program") {
   lir::Program lir_program;
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   REQUIRE(rt_program.instructions().empty());
   REQUIRE(rt_program.inputs().empty());
@@ -44,74 +80,58 @@ TEST_CASE("ProgramEmitter emits empty runtime Program from empty LIR Program") {
 }
 
 // -----------------------------------------------------------------------------
-// Buffer -> Slot mapping
+// Physical slot metadata
 // -----------------------------------------------------------------------------
 
-TEST_CASE("ProgramEmitter creates one runtime slot per LIR buffer") {
+TEST_CASE("ProgramEmitter creates runtime slots from planner physical slots") {
   lir::Program lir_program;
 
   lir_program.create_buffer(Shape{3}, Dtype::F32);
-
   lir_program.create_buffer(Shape{2, 4}, Dtype::F32);
 
-  ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   REQUIRE(rt_program.slots_count() == 2);
+  REQUIRE(rt_program.get_slot_metadata(runtime::SlotId{0}).capacity ==
+          3 * sizeof(float));
+  REQUIRE(rt_program.get_slot_metadata(runtime::SlotId{1}).capacity ==
+          8 * sizeof(float));
 }
 
-TEST_CASE("ProgramEmitter maps BufferId to same-numbered SlotId") {
+TEST_CASE("ProgramEmitter offsets planner slots after external input slots") {
   lir::Program lir_program;
 
-  lir_program.create_buffer(Shape{2}, Dtype::F32);
+  const auto input = lir_program.create_buffer(Shape{2}, Dtype::F32);
+  const auto output = lir_program.create_buffer(Shape{4}, Dtype::F32);
+  lir_program.add_input(ValueId{10}, input);
+  lir_program.add_output(output);
 
-  lir_program.create_buffer(Shape{3}, Dtype::F32);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
-  lir_program.create_buffer(Shape{4}, Dtype::F32);
-
-  ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
-
-  REQUIRE(rt_program.tensor_meta_by_slot(runtime::SlotId{0}).slot_id ==
-          runtime::SlotId{0});
-
-  REQUIRE(rt_program.tensor_meta_by_slot(runtime::SlotId{1}).slot_id ==
-          runtime::SlotId{1});
-
-  REQUIRE(rt_program.tensor_meta_by_slot(runtime::SlotId{2}).slot_id ==
-          runtime::SlotId{2});
+  REQUIRE(rt_program.slots_count() == 2);
+  REQUIRE(rt_program.inputs()[0].slot_id == runtime::SlotId{0});
+  REQUIRE(rt_program.outputs()[0].slot_id == runtime::SlotId{1});
+  REQUIRE(rt_program.get_slot_metadata(runtime::SlotId{0}).capacity ==
+          2 * sizeof(float));
+  REQUIRE(rt_program.get_slot_metadata(runtime::SlotId{1}).capacity ==
+          4 * sizeof(float));
 }
 
-TEST_CASE("ProgramEmitter preserves buffer shape metadata in runtime slots") {
+TEST_CASE(
+    "ProgramEmitter preserves logical shape and dtype on inputs and outputs") {
   lir::Program lir_program;
 
-  lir_program.create_buffer(Shape{2}, Dtype::F32);
+  const auto input = lir_program.create_buffer(Shape{2, 3}, Dtype::F32);
+  const auto output = lir_program.create_buffer(Shape{}, Dtype::F32);
+  lir_program.add_input(ValueId{7}, input);
+  lir_program.add_output(output);
 
-  lir_program.create_buffer(Shape{2, 3}, Dtype::F32);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
-  lir_program.create_buffer(Shape{}, Dtype::F32);
-
-  ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
-
-  REQUIRE(rt_program.tensor_meta_by_slot(runtime::SlotId{0}).shape == Shape{2});
-
-  REQUIRE(rt_program.tensor_meta_by_slot(runtime::SlotId{1}).shape ==
-          Shape{2, 3});
-
-  REQUIRE(rt_program.tensor_meta_by_slot(runtime::SlotId{2}).shape == Shape{});
-}
-
-TEST_CASE("ProgramEmitter preserves buffer dtype metadata in runtime slots") {
-  lir::Program lir_program;
-
-  lir_program.create_buffer(Shape{3}, Dtype::F32);
-
-  ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
-
-  REQUIRE(rt_program.tensor_meta_by_slot(runtime::SlotId{0}).dtype ==
-          Dtype::F32);
+  REQUIRE(rt_program.inputs()[0].shape == Shape{2, 3});
+  REQUIRE(rt_program.inputs()[0].dtype == Dtype::F32);
+  REQUIRE(rt_program.outputs()[0].shape == Shape{});
+  REQUIRE(rt_program.outputs()[0].dtype == Dtype::F32);
 }
 
 // -----------------------------------------------------------------------------
@@ -130,7 +150,7 @@ TEST_CASE("ProgramEmitter converts LIR inputs to runtime slots") {
   lir_program.add_input(ValueId{20}, second);
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   REQUIRE(rt_program.inputs().size() == 2);
 
@@ -165,27 +185,27 @@ TEST_CASE("ProgramEmitter preserves LIR input ordering") {
   lir_program.add_input(ValueId{2}, second);
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   REQUIRE(rt_program.inputs().size() == 3);
 
   REQUIRE(rt_program.inputs()[0].value_id == ValueId{0});
 
-  REQUIRE(rt_program.inputs()[0].slot_id == runtime::SlotId{2});
+  REQUIRE(rt_program.inputs()[0].slot_id == runtime::SlotId{0});
 
   REQUIRE(rt_program.inputs()[1].value_id == ValueId{1});
 
-  REQUIRE(rt_program.inputs()[1].slot_id == runtime::SlotId{0});
+  REQUIRE(rt_program.inputs()[1].slot_id == runtime::SlotId{1});
 
   REQUIRE(rt_program.inputs()[2].value_id == ValueId{2});
 
-  REQUIRE(rt_program.inputs()[2].slot_id == runtime::SlotId{1});
+  REQUIRE(rt_program.inputs()[2].slot_id == runtime::SlotId{2});
 
-  REQUIRE(rt_program.get_slotid_from_valueid(ValueId{0}) == runtime::SlotId{2});
+  REQUIRE(rt_program.get_slotid_from_valueid(ValueId{0}) == runtime::SlotId{0});
 
-  REQUIRE(rt_program.get_slotid_from_valueid(ValueId{1}) == runtime::SlotId{0});
+  REQUIRE(rt_program.get_slotid_from_valueid(ValueId{1}) == runtime::SlotId{1});
 
-  REQUIRE(rt_program.get_slotid_from_valueid(ValueId{2}) == runtime::SlotId{1});
+  REQUIRE(rt_program.get_slotid_from_valueid(ValueId{2}) == runtime::SlotId{2});
 }
 
 // -----------------------------------------------------------------------------
@@ -203,13 +223,13 @@ TEST_CASE("ProgramEmitter converts LIR outputs to runtime slots") {
   lir_program.add_output(first);
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   REQUIRE(rt_program.outputs().size() == 2);
 
-  REQUIRE(rt_program.outputs()[0] == runtime::SlotId{1});
+  REQUIRE(rt_program.outputs()[0].slot_id == runtime::SlotId{1});
 
-  REQUIRE(rt_program.outputs()[1] == runtime::SlotId{0});
+  REQUIRE(rt_program.outputs()[1].slot_id == runtime::SlotId{0});
 }
 
 // -----------------------------------------------------------------------------
@@ -224,7 +244,7 @@ TEST_CASE("ProgramEmitter preserves scalar register count") {
   lir_program.create_scalar();
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   REQUIRE(rt_program.scalar_count() == 3);
 }
@@ -236,7 +256,7 @@ TEST_CASE("ProgramEmitter preserves index register count") {
   lir_program.create_index();
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   REQUIRE(rt_program.index_count() == 2);
 }
@@ -253,7 +273,7 @@ TEST_CASE("ProgramEmitter preserves scalar and index counts independently") {
   }
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   REQUIRE(rt_program.scalar_count() == 4);
   REQUIRE(rt_program.index_count() == 7);
@@ -274,7 +294,7 @@ TEST_CASE("ProgramEmitter translates LIR Constant") {
   });
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   REQUIRE(rt_program.instructions().size() == 1);
 
@@ -303,7 +323,7 @@ TEST_CASE("ProgramEmitter translates LIR Load with register offset") {
   lir_program.add_instruction(lir::Load(scalar, buffer, index));
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   REQUIRE(rt_program.instructions().size() == 1);
 
@@ -330,7 +350,7 @@ TEST_CASE("ProgramEmitter translates LIR Load with constant offset") {
   lir_program.add_instruction(lir::Load(scalar, buffer, lir::ConstantIndex{5}));
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   const auto &instruction = rt_program.instructions()[0];
 
@@ -355,7 +375,7 @@ TEST_CASE("ProgramEmitter translates LIR Store with register offset") {
   lir_program.add_instruction(lir::Store(scalar, buffer, index));
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   REQUIRE(rt_program.instructions().size() == 1);
 
@@ -383,7 +403,7 @@ TEST_CASE("ProgramEmitter translates LIR Store with constant offset") {
       lir::Store(scalar, buffer, lir::ConstantIndex{3}));
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   const auto &instruction = rt_program.instructions()[0];
 
@@ -408,7 +428,7 @@ TEST_CASE("ProgramEmitter translates LIR Add") {
   lir_program.add_instruction(lir::Add(lhs, rhs, dst));
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   REQUIRE(rt_program.instructions().size() == 1);
 
@@ -439,7 +459,7 @@ TEST_CASE("ProgramEmitter translates LIR Mul") {
   lir_program.add_instruction(lir::Mul(lhs, rhs, dst));
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   REQUIRE(rt_program.instructions().size() == 1);
 
@@ -470,7 +490,7 @@ TEST_CASE("ProgramEmitter translates IndexAdd with register operands") {
   lir_program.add_instruction(lir::IndexAdd(lhs, rhs, dst));
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   REQUIRE(rt_program.instructions().size() == 1);
 
@@ -499,7 +519,7 @@ TEST_CASE("ProgramEmitter translates IndexAdd with constant operand") {
   lir_program.add_instruction(lir::IndexAdd(lhs, lir::ConstantIndex{7}, dst));
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   const auto &instruction = rt_program.instructions()[0];
 
@@ -530,7 +550,7 @@ TEST_CASE("ProgramEmitter translates IndexMul with register operands") {
   lir_program.add_instruction(lir::IndexMul(lhs, rhs, dst));
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   REQUIRE(rt_program.instructions().size() == 1);
 
@@ -555,7 +575,7 @@ TEST_CASE("ProgramEmitter translates IndexMul with constant operand") {
   lir_program.add_instruction(lir::IndexMul(lhs, lir::ConstantIndex{16}, dst));
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   const auto &instruction = rt_program.instructions()[0];
 
@@ -594,7 +614,7 @@ TEST_CASE("ProgramEmitter preserves flat non-loop instruction ordering") {
   lir_program.add_instruction(lir::Add(a, b, c));
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   REQUIRE(rt_program.instructions().size() == 3);
 
@@ -630,7 +650,7 @@ TEST_CASE("ProgramEmitter flattens one LIR loop") {
   lir_program.add_instruction(std::move(loop));
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   REQUIRE(rt_program.instructions().size() == 3);
 
@@ -655,7 +675,7 @@ TEST_CASE("ProgramEmitter preserves loop bounds") {
   lir_program.add_instruction(std::move(loop));
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   REQUIRE(rt_program.instructions().size() == 2);
 
@@ -709,7 +729,7 @@ TEST_CASE("ProgramEmitter single loop uses correct jump targets") {
   lir_program.add_instruction(std::move(loop));
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   /*
    * Flat form:
@@ -741,7 +761,7 @@ TEST_CASE("ProgramEmitter empty loop uses correct jump targets") {
   lir_program.add_instruction(std::move(loop));
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   /*
    * 0 LoopBegin jump=2
@@ -796,7 +816,7 @@ TEST_CASE("ProgramEmitter loop body keeps instruction ordering") {
   lir_program.add_instruction(std::move(loop));
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   REQUIRE(rt_program.instructions().size() == 5);
 
@@ -850,7 +870,7 @@ TEST_CASE("ProgramEmitter flattens nested LIR loops") {
   lir_program.add_instruction(std::move(outer));
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   /*
    * 0 outer LoopBegin
@@ -904,7 +924,7 @@ TEST_CASE("ProgramEmitter nested loops have correct independent jump targets") {
   lir_program.add_instruction(std::move(outer));
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   /*
    * 0 Outer LoopBegin   jump = 5
@@ -950,7 +970,7 @@ TEST_CASE("ProgramEmitter nested loops preserve separate loop index ids") {
   lir_program.add_instruction(std::move(outer));
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   REQUIRE(rt_program.instructions()[0].loop_index.value == outer_index.value);
 
@@ -981,7 +1001,7 @@ TEST_CASE("ProgramEmitter converts register-valued loop bound") {
   lir_program.add_instruction(std::move(loop));
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   const auto &begin = rt_program.instructions()[0];
 
@@ -1029,7 +1049,7 @@ TEST_CASE(
   lir_program.add_instruction(std::move(loop));
 
   ProgramEmitter emitter;
-  const auto rt_program = emitter.emit(lir_program);
+  const auto rt_program = emit_with_unique_slots(lir_program);
 
   REQUIRE(rt_program.slots_count() == 2);
   REQUIRE(rt_program.scalar_count() == 1);
@@ -1044,11 +1064,11 @@ TEST_CASE(
 
   REQUIRE(rt_program.get_slotid_from_valueid(ValueId{7}) == runtime::SlotId{0});
 
-  REQUIRE(rt_program.outputs()[0] == runtime::SlotId{1});
+  REQUIRE(rt_program.outputs()[0].slot_id == runtime::SlotId{1});
 
-  REQUIRE(rt_program.tensor_meta_by_slot(runtime::SlotId{0}).shape == Shape{3});
+  REQUIRE(rt_program.inputs()[0].shape == Shape{3});
 
-  REQUIRE(rt_program.tensor_meta_by_slot(runtime::SlotId{1}).shape == Shape{3});
+  REQUIRE(rt_program.outputs()[0].shape == Shape{3});
 
   REQUIRE(rt_program.instructions().size() == 4);
 

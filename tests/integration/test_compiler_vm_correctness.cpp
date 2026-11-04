@@ -2315,3 +2315,50 @@ TEST_CASE(
   REQUIRE_THROWS_AS(compile_and_run(graph, runtime_inputs),
                     std::invalid_argument);
 }
+
+TEST_CASE("Compiler and VM preserve logical scalar output when it reuses a "
+          "larger physical slot") {
+  Graph graph;
+
+  const auto a = graph.input(Shape{2, 2}, Dtype::F32);
+  const auto b = graph.input(Shape{2, 2}, Dtype::F32);
+  const auto bias = graph.input(Shape{}, Dtype::F32);
+
+  const auto product = graph.matmul(a, b);
+  const auto reduced = graph.sum(product);
+  const auto out = graph.add(reduced, bias);
+  graph.set_outputs({out});
+
+  reference::InputBindings reference_inputs;
+  RuntimeInputs runtime_inputs;
+
+  bind_input(reference_inputs, runtime_inputs, a, Shape{2, 2},
+             {1.0F, 2.0F, 3.0F, 4.0F});
+  bind_input(reference_inputs, runtime_inputs, b, Shape{2, 2},
+             {5.0F, 6.0F, 7.0F, 8.0F});
+  bind_input(reference_inputs, runtime_inputs, bias, Shape{}, {1.0F});
+
+  reference::Interpreter interpreter;
+  const auto expected = interpreter.run(graph, out, reference_inputs);
+
+  Compiler compiler;
+  const auto program = compiler.compile(graph);
+  REQUIRE(program.outputs().size() == 1);
+  REQUIRE(program.outputs()[0].shape == Shape{});
+  REQUIRE(program.get_slot_metadata(program.outputs()[0].slot_id).capacity >
+          sizeof(float));
+
+  runtime::InputBindings bindings;
+  for (const auto &input : runtime_inputs) {
+    bindings.bind(program.get_slotid_from_valueid(input.value_id),
+                  input.tensor);
+  }
+
+  runtime::VM vm;
+  const auto actual_outputs = vm.run(program, bindings);
+
+  REQUIRE(actual_outputs.size() == 1);
+  REQUIRE(actual_outputs[0].shape() == Shape{});
+  REQUIRE(actual_outputs[0].data().size() == 1);
+  require_same_tensor(expected, actual_outputs[0]);
+}

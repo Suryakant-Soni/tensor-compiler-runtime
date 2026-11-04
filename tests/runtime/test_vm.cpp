@@ -9,7 +9,10 @@
 #include "tcr/runtime/tensor.hpp"
 #include "tcr/runtime/vm.hpp"
 
+#include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -26,9 +29,7 @@ using tcr::runtime::Opcode;
 using tcr::runtime::Program;
 using tcr::runtime::ScalarId;
 using tcr::runtime::SlotId;
-using tcr::runtime::SlotTensorInfo;
 using tcr::runtime::Tensor;
-using tcr::runtime::ValueIdSlotIdInput;
 using tcr::runtime::VM;
 
 namespace {
@@ -51,32 +52,70 @@ IndexOperand constant_index(std::size_t value) {
   };
 }
 
-SlotTensorInfo slot(std::size_t id, Shape shape) {
-  return SlotTensorInfo{
-      SlotId{id},
-      std::move(shape),
-      Dtype::F32,
-  };
+struct SlotSpec {
+  SlotId slot_id;
+  Shape shape;
+  Dtype dtype;
+};
+
+SlotSpec slot(std::size_t id, Shape shape) {
+  return SlotSpec{SlotId{id}, std::move(shape), Dtype::F32};
+}
+
+const SlotSpec *find_slot_spec(const std::vector<SlotSpec> &slots,
+                               SlotId slot_id) {
+  for (const auto &spec : slots) {
+    if (spec.slot_id == slot_id) {
+      return &spec;
+    }
+  }
+  return nullptr;
 }
 
 Program make_program(std::vector<Instruction> instructions,
                      std::vector<SlotId> input_slots,
-                     std::vector<SlotId> outputs,
-                     std::vector<SlotTensorInfo> slots,
+                     std::vector<SlotId> outputs, std::vector<SlotSpec> slots,
                      std::size_t scalar_count, std::size_t index_count) {
-
-  std::vector<ValueIdSlotIdInput> inputs;
+  std::vector<tcr::runtime::InputInfo> inputs;
   inputs.reserve(input_slots.size());
 
   for (std::size_t i = 0; i < input_slots.size(); ++i) {
-    inputs.push_back(ValueIdSlotIdInput{
+    const auto *spec = find_slot_spec(slots, input_slots[i]);
+    inputs.push_back(tcr::runtime::InputInfo{
         ValueId{static_cast<std::int32_t>(i)},
         input_slots[i],
+        spec ? spec->shape : Shape{1},
+        spec ? spec->dtype : Dtype::F32,
     });
   }
 
-  return Program(std::move(instructions), std::move(inputs), std::move(outputs),
-                 std::move(slots), scalar_count, index_count);
+  std::vector<tcr::runtime::OutputInfo> output_infos;
+  output_infos.reserve(outputs.size());
+  for (const auto output_slot : outputs) {
+    const auto *spec = find_slot_spec(slots, output_slot);
+    output_infos.push_back(tcr::runtime::OutputInfo{
+        output_slot,
+        spec ? spec->shape : Shape{1},
+        spec ? spec->dtype : Dtype::F32,
+    });
+  }
+
+  std::size_t slot_count = 0;
+  for (const auto &spec : slots) {
+    slot_count = std::max(slot_count, spec.slot_id.value + 1);
+  }
+  std::vector<tcr::runtime::SlotMetadata> slot_metadata(
+      slot_count, tcr::runtime::SlotMetadata{0, alignof(std::max_align_t)});
+  for (const auto &spec : slots) {
+    slot_metadata[spec.slot_id.value] = tcr::runtime::SlotMetadata{
+        tcr::ir::size_in_bytes(spec.dtype) * spec.shape.num_elements(),
+        alignof(std::max_align_t),
+    };
+  }
+
+  return Program(std::move(instructions), std::move(inputs),
+                 std::move(output_infos), std::move(slot_metadata),
+                 scalar_count, index_count);
 }
 
 Tensor vector_tensor(std::vector<float> data) {
@@ -2679,31 +2718,11 @@ TEST_CASE("VM rejects Store to input slot without mutating binding") {
   store.offset = constant_index(0);
   instructions.push_back(store);
 
-  std::vector<tcr::runtime::ValueIdSlotIdInput> inputs{
-      tcr::runtime::ValueIdSlotIdInput{
-          tcr::ir::ValueId{0},
-          input_slot,
-      },
-  };
-
-  std::vector<tcr::runtime::SlotId> outputs;
-
-  std::vector<tcr::runtime::SlotTensorInfo> slots{
-      tcr::runtime::SlotTensorInfo{
-          input_slot,
-          Shape{3},
-          Dtype::F32,
-      },
-  };
-
-  tcr::runtime::Program program{
-      std::move(instructions),
-      std::move(inputs),
-      std::move(outputs),
-      std::move(slots),
+  const tcr::runtime::Program program = make_program(
+      std::move(instructions), {input_slot}, {}, {slot(0, Shape{3})},
       1, // scalar_count
-      0, // index_count
-  };
+      0  // index_count
+  );
 
   tcr::runtime::InputBindings bindings;
 

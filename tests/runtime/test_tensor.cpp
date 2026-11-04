@@ -2,13 +2,18 @@
 
 #include "tcr/ir/dtype.hpp"
 #include "tcr/ir/shape.hpp"
+#include "tcr/runtime/storage.hpp"
 #include "tcr/runtime/tensor.hpp"
 
+#include <cstddef>
+#include <cstring>
+#include <memory>
 #include <stdexcept>
 #include <vector>
 
 using tcr::ir::Dtype;
 using tcr::ir::Shape;
+using tcr::runtime::RuntimeStorage;
 using tcr::runtime::Tensor;
 
 // -----------------------------------------------------------------------------
@@ -27,12 +32,11 @@ TEST_CASE("runtime Tensor stores vector shape dtype and data") {
   REQUIRE(tensor.shape().num_elements() == 3);
   REQUIRE(tensor.dtype() == Dtype::F32);
 
-  REQUIRE(tensor.data() ==
-          std::vector<float>{
-              1.0F,
-              2.0F,
-              3.0F,
-          });
+  REQUIRE(tensor.data() == std::vector<float>{
+                               1.0F,
+                               2.0F,
+                               3.0F,
+                           });
 }
 
 TEST_CASE("runtime Tensor stores matrix shape dtype and data") {
@@ -40,8 +44,12 @@ TEST_CASE("runtime Tensor stores matrix shape dtype and data") {
       Shape{2, 3},
       Dtype::F32,
       std::vector<float>{
-          1.0F, 2.0F, 3.0F,
-          4.0F, 5.0F, 6.0F,
+          1.0F,
+          2.0F,
+          3.0F,
+          4.0F,
+          5.0F,
+          6.0F,
       },
   };
 
@@ -50,11 +58,14 @@ TEST_CASE("runtime Tensor stores matrix shape dtype and data") {
   REQUIRE(tensor.shape().num_elements() == 6);
   REQUIRE(tensor.dtype() == Dtype::F32);
 
-  REQUIRE(tensor.data() ==
-          std::vector<float>{
-              1.0F, 2.0F, 3.0F,
-              4.0F, 5.0F, 6.0F,
-          });
+  REQUIRE(tensor.data() == std::vector<float>{
+                               1.0F,
+                               2.0F,
+                               3.0F,
+                               4.0F,
+                               5.0F,
+                               6.0F,
+                           });
 }
 
 TEST_CASE("runtime Tensor supports higher rank shape") {
@@ -62,8 +73,14 @@ TEST_CASE("runtime Tensor supports higher rank shape") {
       Shape{2, 2, 2},
       Dtype::F32,
       std::vector<float>{
-          1.0F, 2.0F, 3.0F, 4.0F,
-          5.0F, 6.0F, 7.0F, 8.0F,
+          1.0F,
+          2.0F,
+          3.0F,
+          4.0F,
+          5.0F,
+          6.0F,
+          7.0F,
+          8.0F,
       },
   };
 
@@ -72,11 +89,16 @@ TEST_CASE("runtime Tensor supports higher rank shape") {
   REQUIRE(tensor.shape().num_elements() == 8);
   REQUIRE(tensor.dtype() == Dtype::F32);
 
-  REQUIRE(tensor.data() ==
-          std::vector<float>{
-              1.0F, 2.0F, 3.0F, 4.0F,
-              5.0F, 6.0F, 7.0F, 8.0F,
-          });
+  REQUIRE(tensor.data() == std::vector<float>{
+                               1.0F,
+                               2.0F,
+                               3.0F,
+                               4.0F,
+                               5.0F,
+                               6.0F,
+                               7.0F,
+                               8.0F,
+                           });
 }
 
 TEST_CASE("runtime Tensor supports scalar shape") {
@@ -118,12 +140,11 @@ TEST_CASE("runtime Tensor preserves zero values") {
       std::vector<float>{0.0F, 0.0F, 0.0F},
   };
 
-  REQUIRE(tensor.data() ==
-          std::vector<float>{
-              0.0F,
-              0.0F,
-              0.0F,
-          });
+  REQUIRE(tensor.data() == std::vector<float>{
+                               0.0F,
+                               0.0F,
+                               0.0F,
+                           });
 }
 
 TEST_CASE("runtime Tensor preserves negative values") {
@@ -137,12 +158,11 @@ TEST_CASE("runtime Tensor preserves negative values") {
       },
   };
 
-  REQUIRE(tensor.data() ==
-          std::vector<float>{
-              -1.0F,
-              -2.0F,
-              -3.0F,
-          });
+  REQUIRE(tensor.data() == std::vector<float>{
+                               -1.0F,
+                               -2.0F,
+                               -3.0F,
+                           });
 }
 
 TEST_CASE("runtime Tensor preserves mixed floating point values") {
@@ -158,14 +178,13 @@ TEST_CASE("runtime Tensor preserves mixed floating point values") {
       },
   };
 
-  REQUIRE(tensor.data() ==
-          std::vector<float>{
-              -2.5F,
-              0.0F,
-              0.25F,
-              3.75F,
-              100.5F,
-          });
+  REQUIRE(tensor.data() == std::vector<float>{
+                               -2.5F,
+                               0.0F,
+                               0.25F,
+                               3.75F,
+                               100.5F,
+                           });
 }
 
 // -----------------------------------------------------------------------------
@@ -173,85 +192,79 @@ TEST_CASE("runtime Tensor preserves mixed floating point values") {
 // -----------------------------------------------------------------------------
 
 TEST_CASE("runtime Tensor rejects too little data for vector shape") {
-  REQUIRE_THROWS_AS(
-      (Tensor{
-          Shape{3},
-          Dtype::F32,
-          std::vector<float>{
-              1.0F,
-              2.0F,
-          },
-      }),
-      std::invalid_argument);
+  REQUIRE_THROWS_AS((Tensor{
+                        Shape{3},
+                        Dtype::F32,
+                        std::vector<float>{
+                            1.0F,
+                            2.0F,
+                        },
+                    }),
+                    std::invalid_argument);
 }
 
 TEST_CASE("runtime Tensor rejects too much data for vector shape") {
-  REQUIRE_THROWS_AS(
-      (Tensor{
-          Shape{2},
-          Dtype::F32,
-          std::vector<float>{
-              1.0F,
-              2.0F,
-              3.0F,
-          },
-      }),
-      std::invalid_argument);
+  REQUIRE_THROWS_AS((Tensor{
+                        Shape{2},
+                        Dtype::F32,
+                        std::vector<float>{
+                            1.0F,
+                            2.0F,
+                            3.0F,
+                        },
+                    }),
+                    std::invalid_argument);
 }
 
 TEST_CASE("runtime Tensor rejects empty data for scalar") {
-  REQUIRE_THROWS_AS(
-      (Tensor{
-          Shape{},
-          Dtype::F32,
-          std::vector<float>{},
-      }),
-      std::invalid_argument);
+  REQUIRE_THROWS_AS((Tensor{
+                        Shape{},
+                        Dtype::F32,
+                        std::vector<float>{},
+                    }),
+                    std::invalid_argument);
 }
 
 TEST_CASE("runtime Tensor rejects multiple values for scalar") {
-  REQUIRE_THROWS_AS(
-      (Tensor{
-          Shape{},
-          Dtype::F32,
-          std::vector<float>{
-              1.0F,
-              2.0F,
-          },
-      }),
-      std::invalid_argument);
+  REQUIRE_THROWS_AS((Tensor{
+                        Shape{},
+                        Dtype::F32,
+                        std::vector<float>{
+                            1.0F,
+                            2.0F,
+                        },
+                    }),
+                    std::invalid_argument);
 }
 
 TEST_CASE("runtime Tensor rejects too little matrix data") {
-  REQUIRE_THROWS_AS(
-      (Tensor{
-          Shape{2, 3},
-          Dtype::F32,
-          std::vector<float>{
-              1.0F,
-              2.0F,
-              3.0F,
-              4.0F,
-              5.0F,
-          },
-      }),
-      std::invalid_argument);
+  REQUIRE_THROWS_AS((Tensor{
+                        Shape{2, 3},
+                        Dtype::F32,
+                        std::vector<float>{
+                            1.0F,
+                            2.0F,
+                            3.0F,
+                            4.0F,
+                            5.0F,
+                        },
+                    }),
+                    std::invalid_argument);
 }
 
 TEST_CASE("runtime Tensor rejects too much matrix data") {
-  REQUIRE_THROWS_AS(
-      (Tensor{
-          Shape{2, 2},
-          Dtype::F32,
-          std::vector<float>{
-              1.0F,
-              2.0F,
-              3.0F,
-              4.0F,
-              5.0F,
-          },
-      }),
-      std::invalid_argument);
+  REQUIRE_THROWS_AS((Tensor{
+                        Shape{2, 2},
+                        Dtype::F32,
+                        std::vector<float>{
+                            1.0F,
+                            2.0F,
+                            3.0F,
+                            4.0F,
+                            5.0F,
+                        },
+                    }),
+                    std::invalid_argument);
 }
 
 // -----------------------------------------------------------------------------
@@ -305,8 +318,12 @@ TEST_CASE("runtime Tensor load uses row-major flat matrix storage") {
       Shape{2, 3},
       Dtype::F32,
       std::vector<float>{
-          1.0F, 2.0F, 3.0F,
-          4.0F, 5.0F, 6.0F,
+          1.0F,
+          2.0F,
+          3.0F,
+          4.0F,
+          5.0F,
+          6.0F,
       },
   };
 
@@ -396,8 +413,7 @@ TEST_CASE("runtime Tensor store updates scalar") {
   tensor.store(0, 42.0F);
 
   REQUIRE(tensor.load(0) == 42.0F);
-  REQUIRE(tensor.data() ==
-          std::vector<float>{42.0F});
+  REQUIRE(tensor.data() == std::vector<float>{42.0F});
 }
 
 TEST_CASE("runtime Tensor store updates flat matrix element") {
@@ -405,18 +421,25 @@ TEST_CASE("runtime Tensor store updates flat matrix element") {
       Shape{2, 3},
       Dtype::F32,
       std::vector<float>{
-          1.0F, 2.0F, 3.0F,
-          4.0F, 5.0F, 6.0F,
+          1.0F,
+          2.0F,
+          3.0F,
+          4.0F,
+          5.0F,
+          6.0F,
       },
   };
 
   tensor.store(4, 50.0F);
 
-  REQUIRE(tensor.data() ==
-          std::vector<float>{
-              1.0F, 2.0F, 3.0F,
-              4.0F, 50.0F, 6.0F,
-          });
+  REQUIRE(tensor.data() == std::vector<float>{
+                               1.0F,
+                               2.0F,
+                               3.0F,
+                               4.0F,
+                               50.0F,
+                               6.0F,
+                           });
 }
 
 TEST_CASE("runtime Tensor supports repeated stores") {
@@ -435,12 +458,11 @@ TEST_CASE("runtime Tensor supports repeated stores") {
   tensor.store(2, 3.0F);
   tensor.store(1, 20.0F);
 
-  REQUIRE(tensor.data() ==
-          std::vector<float>{
-              1.0F,
-              20.0F,
-              3.0F,
-          });
+  REQUIRE(tensor.data() == std::vector<float>{
+                               1.0F,
+                               20.0F,
+                               3.0F,
+                           });
 }
 
 // -----------------------------------------------------------------------------
@@ -558,9 +580,7 @@ TEST_CASE("runtime Tensor load agrees with data accessor") {
       },
   };
 
-  for (std::size_t i = 0;
-       i < tensor.data().size();
-       ++i) {
+  for (std::size_t i = 0; i < tensor.data().size(); ++i) {
     REQUIRE(tensor.load(i) == tensor.data()[i]);
   }
 }
@@ -582,4 +602,59 @@ TEST_CASE("runtime Tensor store is reflected by const data accessor") {
 
   REQUIRE(const_tensor.data()[2] == 30.0F);
   REQUIRE(const_tensor.load(2) == 30.0F);
+}
+
+// -----------------------------------------------------------------------------
+// Shared physical storage / logical tensor bounds
+// -----------------------------------------------------------------------------
+
+TEST_CASE("runtime Tensor can wrap existing RuntimeStorage without copying") {
+  auto storage = std::make_shared<RuntimeStorage>();
+  storage->bytes.resize(2 * sizeof(float));
+  storage->store_f32(0, 3.0F);
+  storage->store_f32(1, 7.0F);
+
+  Tensor tensor{Shape{2}, Dtype::F32, storage};
+
+  REQUIRE(tensor.storage() == storage);
+  REQUIRE(tensor.data() == std::vector<float>{3.0F, 7.0F});
+
+  storage->store_f32(1, 11.0F);
+  REQUIRE(tensor.load(1) == 11.0F);
+}
+
+TEST_CASE("runtime Tensor allows physical storage larger than logical tensor") {
+  auto storage = std::make_shared<RuntimeStorage>();
+  storage->bytes.resize(4 * sizeof(float));
+  storage->store_f32(0, 5.0F);
+  storage->store_f32(1, 99.0F);
+  storage->store_f32(2, 88.0F);
+  storage->store_f32(3, 77.0F);
+
+  const Tensor tensor{Shape{1}, Dtype::F32, storage};
+
+  REQUIRE(tensor.shape().num_elements() == 1);
+  REQUIRE(tensor.data() == std::vector<float>{5.0F});
+  REQUIRE_THROWS_AS(tensor.load(1), std::out_of_range);
+}
+
+TEST_CASE("runtime Tensor store cannot write beyond logical shape even when "
+          "storage is larger") {
+  auto storage = std::make_shared<RuntimeStorage>();
+  storage->bytes.resize(4 * sizeof(float));
+
+  Tensor tensor{Shape{1}, Dtype::F32, storage};
+
+  tensor.store(0, 12.0F);
+  REQUIRE(tensor.load(0) == 12.0F);
+  REQUIRE_THROWS_AS(tensor.store(1, 13.0F), std::out_of_range);
+}
+
+TEST_CASE(
+    "runtime Tensor rejects wrapped storage smaller than logical tensor") {
+  auto storage = std::make_shared<RuntimeStorage>();
+  storage->bytes.resize(sizeof(float));
+
+  REQUIRE_THROWS_AS((Tensor{Shape{2}, Dtype::F32, storage}),
+                    std::invalid_argument);
 }
