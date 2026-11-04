@@ -1,4 +1,6 @@
 #include "tcr/compiler/program_emitter.hpp"
+#include "tcr/compiler/memory_plan.hpp"
+#include "tcr/ir/dtype.hpp"
 #include "tcr/lir/ids.hpp"
 #include "tcr/lir/index.hpp"
 #include "tcr/lir/instruction.hpp"
@@ -39,10 +41,10 @@ runtime::IndexOperand to_runtime_index_operand(const lir::IndexExpr &expr) {
       },
       expr);
 }
-void emit_instruction(
-    const lir::Instruction &lir_instruction,
-    std::vector<runtime::Instruction> &rt_instructions,
-    const std::vector<runtime::SlotTensorInfo> &buffer_to_slot) {
+
+void emit_instruction(const lir::Instruction &lir_instruction,
+                      std::vector<runtime::Instruction> &rt_instructions,
+                      const std::vector<runtime::SlotId> &buffer_to_slot) {
   std::visit(
       [&](const auto &op) {
         using T = std::decay_t<decltype(op)>;
@@ -56,14 +58,14 @@ void emit_instruction(
           rt_instructions.push_back(runtime::Instruction{
               .opcode = runtime::Opcode::Load,
               .scalar_dst = to_runtime_scalar_id(op.dst),
-              .buffer = buffer_to_slot[op.buffer_src.value].slot_id,
+              .buffer = buffer_to_slot[op.buffer_src.value],
               .offset = to_runtime_index_operand(op.offset),
           });
         } else if constexpr (std::is_same_v<T, lir::Store>) {
           rt_instructions.push_back(runtime::Instruction{
               .opcode = runtime::Opcode::Store,
               .scalar_lhs = to_runtime_scalar_id(op.value),
-              .buffer = buffer_to_slot[op.buffer_dst.value].slot_id,
+              .buffer = buffer_to_slot[op.buffer_dst.value],
               .offset = to_runtime_index_operand(op.offset),
           });
         } else if constexpr (std::is_same_v<T, lir::Add>) {
@@ -123,42 +125,60 @@ void emit_instruction(
 } // namespace
 
 // prepare the complete runtime::Program object and emit it
-runtime::Program ProgramEmitter::emit(const lir::Program &lir_program) {
+runtime::Program ProgramEmitter::emit(const lir::Program &lir_program,
+                                      const MemoryPlan &memory_plan) {
 
   std::vector<runtime::Instruction> rt_instructions;
-  std::vector<runtime::ValueIdSlotIdInput> rt_inputs;
-  std::vector<runtime::SlotId> rt_outputs;
+  std::vector<runtime::InputInfo> rt_inputs;
+  std::vector<runtime::OutputInfo> rt_outputs;
 
-  // index = bufferid and value = slotid & tensor info
-  std::vector<runtime::SlotTensorInfo> buffer_to_slot;
+  // index = bufferid and value = slotid
+  std::vector<runtime::SlotId> buffer_to_runtime_slot(
+      lir_program.buffer_count());
+  std::vector<runtime::SlotMetadata> slots(lir_program.inputs().size() +
+                                           memory_plan.slots.size());
 
-  // fillup buffer_to_slot
-  for (std::size_t i = 0; i < lir_program.buffer_count(); ++i) {
-    const auto &buffer = lir_program.buffers()[i];
-    buffer_to_slot.push_back(runtime::SlotTensorInfo{
-        runtime::SlotId{i},
-        buffer.shape,
-        buffer.dtype,
-    });
+  // fill new slots for inputs
+  for (std::size_t i = 0; i < lir_program.inputs().size(); i++) {
+    const auto &lir_input = lir_program.inputs()[i];
+    const auto slot_id = runtime::SlotId{i};
+    buffer_to_runtime_slot[lir_input.buffer.value] = slot_id;
+    const auto &input_buffer = lir_program.buffers()[lir_input.buffer.value];
+    slots[i] = runtime::SlotMetadata{ir::size_in_bytes(input_buffer.dtype) *
+                                         input_buffer.shape.num_elements(),
+                                     alignof(max_align_t)};
+    rt_inputs.push_back(runtime::InputInfo{
+        lir_input.value, slot_id, input_buffer.shape, input_buffer.dtype});
   }
 
-  for (const auto &lir_input : lir_program.inputs()) {
-    rt_inputs.push_back(runtime::ValueIdSlotIdInput{
-        lir_input.value, buffer_to_slot[lir_input.buffer.value].slot_id});
+  // fill buffer to slot for non input slots
+  const auto input_count = lir_program.inputs().size();
+  for (std::size_t i = 0; i < memory_plan.buffer_to_slot.size(); i++) {
+    const auto &planner_slot = memory_plan.buffer_to_slot[i];
+    if (!planner_slot.has_value()) {
+      continue;
+    }
+    const auto runtime_slot = planner_slot->value + input_count;
+    buffer_to_runtime_slot[i] = runtime::SlotId{runtime_slot};
+    const auto &slot_meta = memory_plan.slots[planner_slot->value];
+    slots[runtime_slot] =
+        runtime::SlotMetadata{slot_meta.capacity_bytes, slot_meta.alignment};
   }
 
   for (const auto &lir_output : lir_program.outputs()) {
-    rt_outputs.push_back(buffer_to_slot[lir_output.value].slot_id);
+    const auto &buffer = lir_program.buffers()[lir_output.value];
+    rt_outputs.push_back(runtime::OutputInfo{
+        buffer_to_runtime_slot[lir_output.value], buffer.shape, buffer.dtype});
   }
 
   // for populating runtime instructions from lir/lowered instructions
   for (const auto &lir_instruc : lir_program.instructions()) {
-    emit_instruction(lir_instruc, rt_instructions, buffer_to_slot);
+    emit_instruction(lir_instruc, rt_instructions, buffer_to_runtime_slot);
   }
 
   return runtime::Program(
       std::move(rt_instructions), std::move(rt_inputs), std::move(rt_outputs),
-      buffer_to_slot, lir_program.scalar_count(), lir_program.index_count());
+      slots, lir_program.scalar_count(), lir_program.index_count());
 }
 
 } // namespace tcr::compiler

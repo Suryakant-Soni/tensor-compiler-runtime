@@ -9,9 +9,15 @@
 #include "tcr/lir/program.hpp"
 #include <unordered_map>
 namespace tcr::compiler {
+
+struct LoweringResult {
+  lir::Program program;
+  std::unordered_map<ir::ValueId, lir::BufferId, ir::ValueIdHash>
+      value_to_buffer;
+};
 class Lowering {
 public:
-  lir::Program lower(const ir::Graph &graph, const Schedule &schedule);
+  LoweringResult lower(const ir::Graph &graph, const Schedule &schedule);
 
 private:
   enum class ElementwiseBinaryKind {
@@ -52,8 +58,8 @@ private:
                                          ElementwiseBinaryKind kind);
 
   lir::BufferId lower_elementwise_with_sum(const ir::Graph &graph,
-                                            const KernelUnit &kernel_unit,
-                                            lir::Program &program);
+                                           const KernelUnit &kernel_unit,
+                                           lir::Program &program);
   std::unordered_map<ir::ValueId, lir::BufferId, ir::ValueIdHash>
       valueid_to_bufferid_;
 };

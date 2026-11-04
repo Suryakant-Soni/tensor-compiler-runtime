@@ -29,6 +29,17 @@ Tensor::Tensor(Shape shape, Dtype dtype, std::vector<float> data)
   std::memcpy(storage_->bytes.data(), data.data(), bytes);
 }
 
+Tensor::Tensor(Shape shape, Dtype dtype,
+               std::shared_ptr<RuntimeStorage> storage)
+    : shape_(std::move(shape)), dtype_(dtype), storage_(std::move(storage)) {
+  // validate storage as per shape and dtype
+  const auto required = shape.num_elements() * ir::size_in_bytes(dtype);
+
+  if (!storage_ || storage_->bytes.size() < required) {
+    throw std::invalid_argument("storage is too small for tensor");
+  }
+}
+
 const Shape &Tensor::shape() const { return shape_; }
 
 Dtype Tensor::dtype() const { return dtype_; }
@@ -40,7 +51,14 @@ const std::vector<float> Tensor::data() const {
   return std::move(result);
 }
 
+const std::shared_ptr<RuntimeStorage> &Tensor::storage() const {
+  return storage_;
+}
+
 float Tensor::load(std::size_t offset) const {
+  if (offset >= storage_->bytes.size() / sizeof(float)) {
+    throw std::out_of_range("offset out of bounds");
+  }
   float value;
   std::memcpy(&value, storage_->bytes.data() + offset * sizeof(float),
               sizeof(float));
@@ -48,6 +66,9 @@ float Tensor::load(std::size_t offset) const {
 }
 
 void Tensor::store(std::size_t offset, float value) {
+  if (offset >= storage_->bytes.size() / sizeof(float)) {
+    throw std::out_of_range("offset out of bounds");
+  }
   std::memcpy(storage_->bytes.data() + offset * sizeof(float), &value,
               sizeof(float));
 }

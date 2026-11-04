@@ -108,7 +108,8 @@ lir::Program lower_with_schedule(const Graph &graph) {
   const auto schedule = scheduler.schedule(graph);
 
   Lowering lowering;
-  return lowering.lower(graph, schedule);
+  auto result = lowering.lower(graph, schedule);
+  return std::move(result.program);
 }
 
 std::size_t count_buffers_with_shape(const lir::Program &program,
@@ -791,7 +792,8 @@ TEST_CASE("Lowering grouped Add Sum does not materialize Add intermediate",
   REQUIRE(schedule.kernels[0].members == std::vector<ValueId>{added, out});
 
   Lowering lowering;
-  const auto program = lowering.lower(graph, schedule);
+  const auto lowering_result = lowering.lower(graph, schedule);
+  const auto &program = lowering_result.program;
 
   // Only x, y, and the scalar Sum output need tensor buffers.
   // There is no Shape{4} buffer for `added`.
@@ -801,6 +803,17 @@ TEST_CASE("Lowering grouped Add Sum does not materialize Add intermediate",
 
   REQUIRE(count_buffers_with_shape(program, Shape{4}) == 2);
   REQUIRE(count_buffers_with_shape(program, Shape{}) == 1);
+
+  // LoweringResult exposes mappings only for values that actually have
+  // persistent LIR buffers. The grouped Add intermediate stays internal.
+  REQUIRE(lowering_result.value_to_buffer.find(x) !=
+          lowering_result.value_to_buffer.end());
+  REQUIRE(lowering_result.value_to_buffer.find(y) !=
+          lowering_result.value_to_buffer.end());
+  REQUIRE(lowering_result.value_to_buffer.find(out) !=
+          lowering_result.value_to_buffer.end());
+  REQUIRE(lowering_result.value_to_buffer.find(added) ==
+          lowering_result.value_to_buffer.end());
 
   // Grouped lowering is one reduction:
   // Constant accumulator
@@ -843,7 +856,8 @@ TEST_CASE("Lowering grouped Mul Sum does not materialize Mul intermediate",
   REQUIRE(schedule.kernels[0].members == std::vector<ValueId>{product, out});
 
   Lowering lowering;
-  const auto program = lowering.lower(graph, schedule);
+  const auto lowering_result = lowering.lower(graph, schedule);
+  const auto &program = lowering_result.program;
 
   REQUIRE(program.buffer_count() == 3);
   REQUIRE(count_buffers_with_shape(program, Shape{5}) == 2);
@@ -890,7 +904,8 @@ TEST_CASE("Lowering grouped FusedElementwise Sum does not materialize fused "
   REQUIRE(schedule.kernels[0].members == std::vector<ValueId>{fused, out});
 
   Lowering lowering;
-  const auto program = lowering.lower(graph, schedule);
+  const auto lowering_result = lowering.lower(graph, schedule);
+  const auto &program = lowering_result.program;
 
   // Three vector inputs plus one scalar Sum output.
   // The FusedElementwise result has no tensor buffer.
@@ -1558,10 +1573,12 @@ TEST_CASE("Lowering clears value to buffer state between lower calls") {
 
   Scheduler scheduler;
   const auto first_schedule = scheduler.schedule(first_graph);
-  const auto first_program = lowering.lower(first_graph, first_schedule);
+  const auto first_result = lowering.lower(first_graph, first_schedule);
+  const auto &first_program = first_result.program;
 
   REQUIRE(first_program.buffer_count() == 3);
   REQUIRE(first_program.inputs().size() == 2);
+  REQUIRE(first_result.value_to_buffer.size() == 3);
 
   Graph second_graph;
 
@@ -1572,11 +1589,15 @@ TEST_CASE("Lowering clears value to buffer state between lower calls") {
   });
 
   const auto second_schedule = scheduler.schedule(second_graph);
-  const auto second_program = lowering.lower(second_graph, second_schedule);
+  const auto second_result = lowering.lower(second_graph, second_schedule);
+  const auto &second_program = second_result.program;
 
   REQUIRE(second_program.buffer_count() == 1);
   REQUIRE(second_program.inputs().size() == 1);
   REQUIRE(second_program.outputs().size() == 1);
+  REQUIRE(second_result.value_to_buffer.size() == 1);
+  REQUIRE(second_result.value_to_buffer.find(second_x) !=
+          second_result.value_to_buffer.end());
 
   REQUIRE(second_program.buffers()[0].shape == Shape{5});
 

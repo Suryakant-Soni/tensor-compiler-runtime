@@ -20,25 +20,31 @@
 #include <vector>
 namespace tcr::runtime {
 
-struct SlotTensorInfo {
+struct SlotMetadata {
+  std::size_t capacity;
+  std::size_t alignment;
+};
+
+struct InputInfo {
+  ir::ValueId value_id;
   SlotId slot_id;
   ir::Shape shape;
   ir::Dtype dtype;
 };
 
-struct ValueIdSlotIdInput {
-  ir::ValueId value_id;
+struct OutputInfo {
   SlotId slot_id;
+  ir::Shape shape;
+  ir::Dtype dtype;
 };
 
 class Program {
 public:
   Program();
 
-  Program(std::vector<Instruction> instructions,
-          std::vector<ValueIdSlotIdInput> inputs, std::vector<SlotId> outputs,
-          std::vector<SlotTensorInfo> slots, std::size_t scalar_count,
-          std::size_t index_count);
+  Program(std::vector<Instruction> instructions, std::vector<InputInfo> inputs,
+          std::vector<OutputInfo> outputs, std::vector<SlotMetadata> slots,
+          std::size_t scalar_count, std::size_t index_count);
 
   // instructions mutable and immutable getters
   const std::vector<Instruction> &instructions() const;
@@ -46,23 +52,23 @@ public:
   // add new instruction
   void add_instruction(Instruction instruction);
 
-  const std::vector<ValueIdSlotIdInput> &inputs() const;
-  const std::vector<SlotId> &outputs() const;
+  const std::vector<InputInfo> &inputs() const;
+  const std::vector<OutputInfo> &outputs() const;
 
   std::size_t slots_count() const;
   std::size_t scalar_count() const;
   std::size_t index_count() const;
-  const SlotTensorInfo &tensor_meta_by_slot(SlotId slot_id) const;
+  const SlotMetadata &get_slot_metadata(SlotId slot_id) const;
   SlotId get_slotid_from_valueid(ir::ValueId value_id) const;
   bool is_input_slot(SlotId input) const;
 
 private:
   std::vector<Instruction> instructions_;
 
-  std::vector<ValueIdSlotIdInput> inputs_;
-  std::vector<SlotId> outputs_;
+  std::vector<InputInfo> inputs_;
+  std::vector<OutputInfo> outputs_;
 
-  std::vector<SlotTensorInfo> slots_;
+  std::vector<SlotMetadata> slots_;
 
   std::size_t scalar_count_{0};
   std::size_t index_count_{0};

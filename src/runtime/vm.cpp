@@ -1,12 +1,14 @@
 #include "tcr/runtime/vm.hpp"
+#include "tcr/ir/dtype.hpp"
 #include "tcr/runtime/opcode.hpp"
 #include "tcr/runtime/slot_id.hpp"
+#include "tcr/runtime/storage.hpp"
 #include "tcr/runtime/tensor.hpp"
 #include <cstddef>
+#include <cstring>
 #include <limits>
-#include <optional>
+#include <memory>
 #include <stdexcept>
-#include <utility>
 #include <vector>
 
 namespace tcr::runtime {
@@ -28,23 +30,25 @@ std::size_t checked_mul(std::size_t lhs, std::size_t rhs) {
 using tcr::runtime::Opcode;
 namespace {
 
-const Tensor &get_slot_tensor(const std::vector<std::optional<Tensor>> &slots,
-                              SlotId slot_id) {
+const RuntimeStorage &
+get_slot_storage(const std::vector<std::shared_ptr<RuntimeStorage>> &slots,
+                 SlotId slot_id) {
   if (slot_id.value >= slots.size()) {
     throw std::logic_error("runtime slot id out of range");
   }
-  if (!slots[slot_id.value].has_value()) {
-    throw std::logic_error("attempted to read an empty runtime slot");
+  if (!slots[slot_id.value]) {
+    throw std::logic_error("attempted to read an unallocated runtime slot");
   }
   return *slots[slot_id.value];
 }
-Tensor &get_slot_tensor(std::vector<std::optional<Tensor>> &slots,
-                        SlotId slot_id) {
+RuntimeStorage &
+get_slot_storage(std::vector<std::shared_ptr<RuntimeStorage>> &slots,
+                 SlotId slot_id) {
   if (slot_id.value >= slots.size()) {
     throw std::logic_error("runtime slot id out of range");
   }
-  if (!slots[slot_id.value].has_value()) {
-    throw std::logic_error("attempted to read an empty runtime slot");
+  if (!slots[slot_id.value]) {
+    throw std::logic_error("attempted to read an unallocated runtime slot");
   }
   return *slots[slot_id.value];
 }
@@ -69,40 +73,44 @@ std::vector<Tensor> VM::run(const runtime::Program &rt_program,
                             const InputBindings &bindings) {
   // for run state, create slots/tensor table for tensors, scalar table for
   // managing float values, index table for managing index and their
-  // arithmetic, this willbe needful across execting the incoming instructions
-  std::vector<std::optional<Tensor>> slots(rt_program.slots_count());
+  // arithmetic, this willbe needful across executing the incoming instructions
+  std::vector<std::shared_ptr<RuntimeStorage>> slots(rt_program.slots_count());
   std::vector<float> scalars(rt_program.scalar_count());
   std::vector<std::size_t> indices(rt_program.index_count());
 
-  // populate tensor values for input slots
-  for (const auto value_slot_id : rt_program.inputs()) {
-    if (value_slot_id.slot_id.value >= slots.size()) {
+  // populate runtime storage for input slots
+  for (const auto &input_info : rt_program.inputs()) {
+    if (input_info.slot_id.value >= slots.size()) {
       throw std::logic_error("runtime slot id out of range");
     }
-    const auto &actual_tensor = bindings.get(value_slot_id.slot_id);
+    const auto &actual_tensor = bindings.get(input_info.slot_id);
 
-    const auto &expected_metadata =
-        rt_program.tensor_meta_by_slot(value_slot_id.slot_id);
-
-    if (actual_tensor.shape() != expected_metadata.shape) {
+    if (actual_tensor.shape() != input_info.shape) {
       throw std::invalid_argument(
           "input tensor shape does not match program input");
     }
-    if (actual_tensor.dtype() != expected_metadata.dtype) {
+    if (actual_tensor.dtype() != input_info.dtype) {
       throw std::invalid_argument(
           "input tensor dtype does not match program input");
     }
-    slots[value_slot_id.slot_id.value] = actual_tensor;
+    if (actual_tensor.storage()->bytes.size() <
+        (actual_tensor.shape().num_elements() *
+         ir::size_in_bytes(actual_tensor.dtype()))) {
+      throw std::logic_error(
+          "storage of slot is smaller than what shape defines");
+    }
+    slots[input_info.slot_id.value] = actual_tensor.storage();
   }
 
   // populate tensor for non-input slots
   for (std::size_t i = 0; i < rt_program.slots_count(); ++i) {
-    if (slots[i].has_value()) {
+    // check if the slots shared ptr points to the already allocated memory
+    if (slots[i]) {
       continue;
     }
-    const auto &tensor_info = rt_program.tensor_meta_by_slot(SlotId{i});
-    std::vector<float> data(tensor_info.shape.num_elements(), 0.0f);
-    slots[i].emplace(tensor_info.shape, tensor_info.dtype, std::move(data));
+    const auto &storage_meta = rt_program.get_slot_metadata(SlotId{i});
+    slots[i] = std::make_shared<RuntimeStorage>();
+    slots[i]->bytes.resize(storage_meta.capacity);
   }
 
   std::size_t pc = 0;
@@ -126,31 +134,31 @@ std::vector<Tensor> VM::run(const runtime::Program &rt_program,
       }
       const auto offset =
           resolve_index_operand_value(rt_instruc.offset, indices);
-      const auto &tensor = get_slot_tensor(slots, rt_instruc.buffer);
-      if (offset >= tensor.data().size()) {
+      const auto &storage = get_slot_storage(slots, rt_instruc.buffer);
+      if (offset * sizeof(float) >= storage.bytes.size()) {
         throw std::logic_error(
             "given runtime tensor load offset is out of range");
       }
-      scalars[rt_instruc.scalar_dst.value] = tensor.load(offset);
+      scalars[rt_instruc.scalar_dst.value] = storage.load_f32(offset);
       pc++;
       break;
     }
     case Opcode::Store: {
       if (rt_instruc.scalar_lhs.value >= scalars.size()) {
         throw std::logic_error(
-            "given runtime scalar value position is out of range");
+            "given runtime scalar value offset is greater than storage length");
       }
       if (rt_program.is_input_slot(rt_instruc.buffer)) {
         throw std::logic_error("Store is trying to mutate input tensor");
       }
       const auto offset =
           resolve_index_operand_value(rt_instruc.offset, indices);
-      Tensor &tensor = get_slot_tensor(slots, rt_instruc.buffer);
-      if (offset >= tensor.data().size()) {
-        throw std::logic_error("given runtime scalar position to be stored "
-                               "into tensor; is out of range");
+      auto &storage = get_slot_storage(slots, rt_instruc.buffer);
+      if (offset * sizeof(float) >= storage.bytes.size()) {
+        throw std::logic_error(
+            "given runtime scalar value offset is greater than storage length");
       }
-      tensor.store(offset, scalars[rt_instruc.scalar_lhs.value]);
+      storage.store_f32(offset, scalars[rt_instruc.scalar_lhs.value]);
       pc++;
       break;
     }
@@ -244,8 +252,13 @@ std::vector<Tensor> VM::run(const runtime::Program &rt_program,
   std::vector<Tensor> outputs;
   outputs.reserve(rt_program.outputs().size());
 
-  for (const SlotId slot : rt_program.outputs()) {
-    outputs.push_back(get_slot_tensor(slots, slot));
+  for (const auto &output : rt_program.outputs()) {
+    if (output.slot_id.value >= slots.size() || !slots[output.slot_id.value]) {
+      throw std::logic_error("invalid output slot");
+    }
+
+    outputs.emplace_back(output.shape, output.dtype,
+                         slots[output.slot_id.value]);
   }
   return outputs;
 }

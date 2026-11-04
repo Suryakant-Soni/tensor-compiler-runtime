@@ -80,7 +80,8 @@ lir::BufferId Lowering::require_buffer(const ir::Graph &graph,
       "buffer should be available for the previously computed value");
 }
 
-lir::Program Lowering::lower(const ir::Graph &graph, const Schedule &schedule) {
+LoweringResult Lowering::lower(const ir::Graph &graph,
+                               const Schedule &schedule) {
 
   valueid_to_bufferid_.clear();
   validate_schedule(schedule, graph.values_count());
@@ -92,7 +93,7 @@ lir::Program Lowering::lower(const ir::Graph &graph, const Schedule &schedule) {
   for (const auto output : graph.outputs()) {
     program.add_output(require_buffer(graph, output, program));
   }
-  return program;
+  return LoweringResult{std::move(program), std::move(valueid_to_bufferid_)};
 }
 
 lir::BufferId Lowering::lower_kernel(const ir::Graph &graph,

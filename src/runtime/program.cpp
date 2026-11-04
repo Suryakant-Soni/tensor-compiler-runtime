@@ -11,9 +11,9 @@ namespace tcr::runtime {
 Program::Program() = default;
 
 Program::Program(std::vector<Instruction> instructions,
-                 std::vector<ValueIdSlotIdInput> inputs,
-                 std::vector<SlotId> outputs, std::vector<SlotTensorInfo> slots,
-                 std::size_t scalar_count, std::size_t index_count)
+                 std::vector<InputInfo> inputs, std::vector<OutputInfo> outputs,
+                 std::vector<SlotMetadata> slots, std::size_t scalar_count,
+                 std::size_t index_count)
     : instructions_(std::move(instructions)), inputs_(std::move(inputs)),
       outputs_(std::move(outputs)), slots_(std::move(slots)),
       scalar_count_(scalar_count), index_count_(index_count) {}
@@ -26,16 +26,14 @@ void Program::add_instruction(Instruction instruction) {
   instructions_.push_back(std::move(instruction));
 }
 
-const std::vector<ValueIdSlotIdInput> &Program::inputs() const {
-  return inputs_;
-}
-const std::vector<SlotId> &Program::outputs() const { return outputs_; }
+const std::vector<InputInfo> &Program::inputs() const { return inputs_; }
+const std::vector<OutputInfo> &Program::outputs() const { return outputs_; }
 
 std::size_t Program::slots_count() const { return slots_.size(); }
 std::size_t Program::scalar_count() const { return scalar_count_; }
 std::size_t Program::index_count() const { return index_count_; }
 
-const SlotTensorInfo &Program::tensor_meta_by_slot(SlotId slot_id) const {
+const SlotMetadata &Program::get_slot_metadata(SlotId slot_id) const {
   if (slot_id.value >= slots_.size()) {
     throw std::out_of_range(
         "runtime slotid is out of range(greater than slots count)");

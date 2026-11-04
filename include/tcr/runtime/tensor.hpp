@@ -22,9 +22,15 @@ using tcr::ir::Shape;
 class Tensor {
 public:
   Tensor(Shape shape, Dtype dtype, std::vector<float> data);
+
+  Tensor(Shape shape, Dtype dtype, std::shared_ptr<RuntimeStorage> storage);
+
   const Shape &shape() const;
   Dtype dtype() const;
+
   const std::vector<float> data() const;
+  const std::shared_ptr<RuntimeStorage> &storage() const;
+
   float load(std::size_t offset) const;
   void store(std::size_t offset, float value);
 
