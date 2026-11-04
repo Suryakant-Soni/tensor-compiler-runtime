@@ -153,16 +153,26 @@ runtime::Program ProgramEmitter::emit(const lir::Program &lir_program,
 
   // fill buffer to slot for non input slots
   const auto input_count = lir_program.inputs().size();
-  for (std::size_t i = 0; i < memory_plan.buffer_to_slot.size(); i++) {
-    const auto &planner_slot = memory_plan.buffer_to_slot[i];
-    if (!planner_slot.has_value()) {
+
+  // 1. Buffer → runtime slot mapping
+  for (std::size_t b = 0; b < memory_plan.buffer_to_slot.size(); ++b) {
+    const auto &planner_slot = memory_plan.buffer_to_slot[b];
+
+    if (!planner_slot)
       continue;
-    }
-    const auto runtime_slot = planner_slot->value + input_count;
-    buffer_to_runtime_slot[i] = runtime::SlotId{runtime_slot};
-    const auto &slot_meta = memory_plan.slots[planner_slot->value];
-    slots[runtime_slot] =
-        runtime::SlotMetadata{slot_meta.capacity_bytes, slot_meta.alignment};
+
+    buffer_to_runtime_slot[b] =
+        runtime::SlotId{input_count + planner_slot->value};
+  }
+
+  // 2. Physical planner slots → runtime slot metadata
+  for (std::size_t p = 0; p < memory_plan.slots.size(); ++p) {
+    const auto &meta = memory_plan.slots[p];
+
+    slots[input_count + p] = runtime::SlotMetadata{
+        meta.capacity_bytes,
+        meta.alignment,
+    };
   }
 
   for (const auto &lir_output : lir_program.outputs()) {
