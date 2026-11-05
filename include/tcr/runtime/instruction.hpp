@@ -51,6 +51,7 @@ struct Instruction {
   // memory access
   SlotId buffer{};
   IndexOperand offset{};
+  std::size_t buffer_element_count{};
 
   // scalar constant
   float constant{0.0F};

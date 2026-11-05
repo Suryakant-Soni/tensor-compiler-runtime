@@ -329,10 +329,12 @@ TEST_CASE("Compiler Add connects runtime scalar registers correctly") {
 
   REQUIRE(load_a.scalar_dst.value == 0);
   REQUIRE(load_a.buffer == SlotId{0});
+  REQUIRE(load_a.buffer_element_count == 2);
   require_register_operand(load_a.offset, 0);
 
   REQUIRE(load_b.scalar_dst.value == 1);
   REQUIRE(load_b.buffer == SlotId{1});
+  REQUIRE(load_b.buffer_element_count == 2);
   require_register_operand(load_b.offset, 0);
 
   REQUIRE(add.scalar_lhs.value == 0);
@@ -341,6 +343,7 @@ TEST_CASE("Compiler Add connects runtime scalar registers correctly") {
 
   REQUIRE(store.scalar_lhs.value == 2);
   REQUIRE(store.buffer == SlotId{2});
+  REQUIRE(store.buffer_element_count == 2);
   require_register_operand(store.offset, 0);
 }
 
@@ -555,6 +558,7 @@ TEST_CASE("Compiler Sum produces scalar output metadata") {
   const auto &store = program.instructions()[5];
 
   REQUIRE(store.buffer == SlotId{1});
+  REQUIRE(store.buffer_element_count == 1);
   require_constant_operand(store.offset, 0);
 }
 
@@ -605,8 +609,11 @@ TEST_CASE("Compiler groups Add before Sum without materializing Add output") {
   REQUIRE(program.instructions()[7].opcode == Opcode::Store);
 
   REQUIRE(program.instructions()[2].buffer == x_slot);
+  REQUIRE(program.instructions()[2].buffer_element_count == 4);
   REQUIRE(program.instructions()[3].buffer == y_slot);
+  REQUIRE(program.instructions()[3].buffer_element_count == 4);
   REQUIRE(program.instructions()[7].buffer == out_slot);
+  REQUIRE(program.instructions()[7].buffer_element_count == 1);
 }
 
 TEST_CASE("Compiler groups Mul before Sum without materializing Mul output") {
@@ -647,8 +654,11 @@ TEST_CASE("Compiler groups Mul before Sum without materializing Mul output") {
   REQUIRE(program.instructions()[7].opcode == Opcode::Store);
 
   REQUIRE(program.instructions()[2].buffer == x_slot);
+  REQUIRE(program.instructions()[2].buffer_element_count == 5);
   REQUIRE(program.instructions()[3].buffer == y_slot);
+  REQUIRE(program.instructions()[3].buffer_element_count == 5);
   REQUIRE(program.instructions()[7].buffer == out_slot);
+  REQUIRE(program.instructions()[7].buffer_element_count == 1);
 }
 
 TEST_CASE("Compiler groups fused elementwise expression before Sum without "
@@ -698,9 +708,13 @@ TEST_CASE("Compiler groups fused elementwise expression before Sum without "
   REQUIRE(program.instructions()[9].opcode == Opcode::Store);
 
   REQUIRE(program.instructions()[2].buffer == x_slot);
+  REQUIRE(program.instructions()[2].buffer_element_count == 4);
   REQUIRE(program.instructions()[3].buffer == y_slot);
+  REQUIRE(program.instructions()[3].buffer_element_count == 4);
   REQUIRE(program.instructions()[4].buffer == z_slot);
+  REQUIRE(program.instructions()[4].buffer_element_count == 4);
   REQUIRE(program.instructions()[9].buffer == out_slot);
+  REQUIRE(program.instructions()[9].buffer_element_count == 1);
 }
 
 // =============================================================================
@@ -909,12 +923,15 @@ TEST_CASE("Compiler MatMul maps loads and output store to correct slots") {
 
   REQUIRE(a_load.opcode == Opcode::Load);
   REQUIRE(a_load.buffer == SlotId{0});
+  REQUIRE(a_load.buffer_element_count == 2 * 3);
 
   REQUIRE(b_load.opcode == Opcode::Load);
   REQUIRE(b_load.buffer == SlotId{1});
+  REQUIRE(b_load.buffer_element_count == 3 * 4);
 
   REQUIRE(store.opcode == Opcode::Store);
   REQUIRE(store.buffer == SlotId{2});
+  REQUIRE(store.buffer_element_count == 2 * 4);
 }
 
 // =============================================================================
@@ -982,9 +999,13 @@ TEST_CASE("Compiler fuses single-use elementwise dependency chain") {
   REQUIRE(program.instructions()[7].opcode == Opcode::LoopEnd);
 
   REQUIRE(program.instructions()[1].buffer == x_slot);
+  REQUIRE(program.instructions()[1].buffer_element_count == 3);
   REQUIRE(program.instructions()[2].buffer == y_slot);
+  REQUIRE(program.instructions()[2].buffer_element_count == 3);
   REQUIRE(program.instructions()[3].buffer == z_slot);
+  REQUIRE(program.instructions()[3].buffer_element_count == 3);
   REQUIRE(program.instructions()[6].buffer == out_slot);
+  REQUIRE(program.instructions()[6].buffer_element_count == 3);
 
   // The fused expression computes Add(Mul(x, y), z).
   REQUIRE(program.instructions()[4].scalar_lhs.value == 0);
@@ -1089,15 +1110,19 @@ TEST_CASE(
 
   REQUIRE(program.instructions()[7].opcode == Opcode::Load);
   REQUIRE(program.instructions()[7].buffer == shared_slot);
+  REQUIRE(program.instructions()[7].buffer_element_count == 2);
 
   REQUIRE(program.instructions()[8].opcode == Opcode::Load);
   REQUIRE(program.instructions()[8].buffer == z_slot);
+  REQUIRE(program.instructions()[8].buffer_element_count == 2);
 
   REQUIRE(program.instructions()[9].opcode == Opcode::Load);
   REQUIRE(program.instructions()[9].buffer == shared_slot);
+  REQUIRE(program.instructions()[9].buffer_element_count == 2);
 
   REQUIRE(program.instructions()[10].opcode == Opcode::Load);
   REQUIRE(program.instructions()[10].buffer == z_slot);
+  REQUIRE(program.instructions()[10].buffer_element_count == 2);
 
   REQUIRE(program.instructions()[11].opcode == Opcode::Add);
   REQUIRE(program.instructions()[12].opcode == Opcode::Mul);
@@ -1105,6 +1130,7 @@ TEST_CASE(
 
   REQUIRE(program.instructions()[14].opcode == Opcode::Store);
   REQUIRE(program.instructions()[14].buffer == out_slot);
+  REQUIRE(program.instructions()[14].buffer_element_count == 2);
 
   REQUIRE(program.instructions()[15].opcode == Opcode::LoopEnd);
 }
@@ -1335,9 +1361,12 @@ TEST_CASE("Compiler propagates MatMul result metadata into dependent Add") {
   // First load of following Add consumes MatMul storage; second consumes bias.
   REQUIRE(program.instructions()[19].opcode == Opcode::Load);
   REQUIRE(program.instructions()[19].buffer == matmul_slot);
+  REQUIRE(program.instructions()[19].buffer_element_count == 2 * 4);
   REQUIRE(program.instructions()[20].buffer == bias_slot);
+  REQUIRE(program.instructions()[20].buffer_element_count == 2 * 4);
   REQUIRE(program.instructions()[21].opcode == Opcode::Add);
   REQUIRE(program.instructions()[22].buffer == out_slot);
+  REQUIRE(program.instructions()[22].buffer_element_count == 2 * 4);
 
   REQUIRE(lhs_slot != rhs_slot);
   REQUIRE(lhs_slot != bias_slot);
@@ -1401,11 +1430,45 @@ TEST_CASE(
   REQUIRE(program.instructions()[10].opcode == Opcode::LoopEnd);
   REQUIRE(program.instructions()[11].opcode == Opcode::Store);
   REQUIRE(program.instructions()[11].buffer == out_slot);
+  REQUIRE(program.instructions()[11].buffer_element_count == 1);
 
   REQUIRE(program.instructions()[2].buffer == x_slot);
+  REQUIRE(program.instructions()[2].buffer_element_count == 4);
   REQUIRE(program.instructions()[3].buffer == y_slot);
+  REQUIRE(program.instructions()[3].buffer_element_count == 4);
   REQUIRE(program.instructions()[4].buffer == x_slot);
+  REQUIRE(program.instructions()[4].buffer_element_count == 4);
   REQUIRE(program.instructions()[5].buffer == y_slot);
+  REQUIRE(program.instructions()[5].buffer_element_count == 4);
+}
+
+TEST_CASE("Compiler emits logical buffer bounds independently of physical slot "
+          "capacity") {
+  Graph graph;
+
+  const auto a = graph.input(Shape{2, 2}, Dtype::F32);
+  const auto b = graph.input(Shape{2, 2}, Dtype::F32);
+  const auto c = graph.input(Shape{2, 2}, Dtype::F32);
+  const auto d = graph.input(Shape{2, 2}, Dtype::F32);
+
+  const auto first = graph.matmul(a, b);
+  const auto second = graph.matmul(first, c);
+  const auto out = graph.matmul(second, d);
+
+  graph.set_outputs({out});
+
+  Compiler compiler;
+  const auto program = compiler.compile(graph);
+
+  // Every memory access must carry the logical extent of the LIR buffer it
+  // addresses, even though Phase 6 may map different logical buffers onto the
+  // same physical runtime slot.
+  for (const auto &instruction : program.instructions()) {
+    if (instruction.opcode == Opcode::Load ||
+        instruction.opcode == Opcode::Store) {
+      REQUIRE(instruction.buffer_element_count == 4);
+    }
+  }
 }
 
 // =============================================================================

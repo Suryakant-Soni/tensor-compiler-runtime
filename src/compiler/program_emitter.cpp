@@ -4,6 +4,7 @@
 #include "tcr/lir/ids.hpp"
 #include "tcr/lir/index.hpp"
 #include "tcr/lir/instruction.hpp"
+#include "tcr/lir/program.hpp"
 #include "tcr/runtime/instruction.hpp"
 #include "tcr/runtime/opcode.hpp"
 #include "tcr/runtime/program.hpp"
@@ -44,7 +45,8 @@ runtime::IndexOperand to_runtime_index_operand(const lir::IndexExpr &expr) {
 
 void emit_instruction(const lir::Instruction &lir_instruction,
                       std::vector<runtime::Instruction> &rt_instructions,
-                      const std::vector<runtime::SlotId> &buffer_to_slot) {
+                      const std::vector<runtime::SlotId> &buffer_to_slot,
+                      const std::vector<lir::Buffer> &buffers) {
   std::visit(
       [&](const auto &op) {
         using T = std::decay_t<decltype(op)>;
@@ -55,10 +57,13 @@ void emit_instruction(const lir::Instruction &lir_instruction,
               .constant = op.value,
           });
         } else if constexpr (std::is_same_v<T, lir::Load>) {
+          const auto &buffer = buffers[op.buffer_src.value];
           rt_instructions.push_back(runtime::Instruction{
               .opcode = runtime::Opcode::Load,
               .scalar_dst = to_runtime_scalar_id(op.dst),
               .buffer = buffer_to_slot[op.buffer_src.value],
+              .buffer_element_count =
+                  buffers[op.buffer_src.value].shape.num_elements(),
               .offset = to_runtime_index_operand(op.offset),
           });
         } else if constexpr (std::is_same_v<T, lir::Store>) {
@@ -66,6 +71,8 @@ void emit_instruction(const lir::Instruction &lir_instruction,
               .opcode = runtime::Opcode::Store,
               .scalar_lhs = to_runtime_scalar_id(op.value),
               .buffer = buffer_to_slot[op.buffer_dst.value],
+              .buffer_element_count =
+                  buffers[op.buffer_dst.value].shape.num_elements(),
               .offset = to_runtime_index_operand(op.offset),
           });
         } else if constexpr (std::is_same_v<T, lir::Add>) {
@@ -107,7 +114,8 @@ void emit_instruction(const lir::Instruction &lir_instruction,
           });
           const auto body_pc = rt_instructions.size();
           for (const auto &child_inst : op->body) {
-            emit_instruction(child_inst, rt_instructions, buffer_to_slot);
+            emit_instruction(child_inst, rt_instructions, buffer_to_slot,
+                             buffers);
           }
 
           rt_instructions.push_back(runtime::Instruction{
@@ -183,7 +191,8 @@ runtime::Program ProgramEmitter::emit(const lir::Program &lir_program,
 
   // for populating runtime instructions from lir/lowered instructions
   for (const auto &lir_instruc : lir_program.instructions()) {
-    emit_instruction(lir_instruc, rt_instructions, buffer_to_runtime_slot);
+    emit_instruction(lir_instruc, rt_instructions, buffer_to_runtime_slot,
+                     lir_program.buffers());
   }
 
   return runtime::Program(

@@ -1,3 +1,8 @@
+# Tensor Compiler + Runtime Architecture
+
+**Last updated:** November 5, 2026
+
+```text
 graph object
 (inputs, outputs, intermediate values, operation nodes)
     │
@@ -104,3 +109,71 @@ graph object
               │
               ▼
         Output Tensor(s)
+```
+
+## Phase 6 Memory Planner — Measured Allocation Reduction
+
+The memory planner now has a direct regression test comparing naive logical-buffer allocation with lifetime-based physical-slot reuse.
+
+Test:
+
+```text
+MemoryPlanner reduces allocation footprint versus naive allocation
+```
+
+Measured result:
+
+| Metric             |    Bytes |
+| ------------------ | -------: |
+| Naive allocation   |       48 |
+| Planned allocation |       32 |
+| Bytes saved        |       16 |
+| Reduction          | 33.3333% |
+
+For the tested three-kernel chain:
+
+```text
+first  = Shape{4}, F32 = 16 bytes
+second = Shape{4}, F32 = 16 bytes
+third  = Shape{4}, F32 = 16 bytes
+```
+
+Naive allocation gives every planner-owned logical buffer separate storage:
+
+```text
+16 + 16 + 16 = 48 bytes
+```
+
+Lifetime-aware planning reuses storage:
+
+```text
+first  → S0
+second → S1
+third  → S0
+```
+
+Therefore only two physical slots are required:
+
+```text
+S0 = 16 bytes
+S1 = 16 bytes
+
+Total planned allocation = 32 bytes
+```
+
+So the planner reduces the physical allocation footprint from **48 bytes to 32 bytes**, saving **16 bytes**, or **33.3333%**, for this test graph.
+
+To reproduce the measurement from the build directory:
+
+```bash
+ctest -R "MemoryPlanner reduces allocation footprint versus naive allocation" -V
+```
+
+Expected diagnostic output:
+
+```text
+Naive bytes:   48
+Planned bytes: 32
+Saved bytes:   16
+Reduction:     33.3333%
+```

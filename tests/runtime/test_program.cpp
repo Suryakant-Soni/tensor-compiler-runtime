@@ -365,6 +365,7 @@ TEST_CASE("runtime Program preserves instruction execution order") {
       .opcode = Opcode::Store,
       .scalar_lhs = ScalarId{2},
       .buffer = SlotId{0},
+      .buffer_element_count = 1,
       .offset =
           IndexOperand{.kind = IndexOperand::Kind::Constant, .constant = 0},
   };
@@ -375,6 +376,7 @@ TEST_CASE("runtime Program preserves instruction execution order") {
   REQUIRE(program.instructions()[0].opcode == Opcode::Constant);
   REQUIRE(program.instructions()[1].opcode == Opcode::Add);
   REQUIRE(program.instructions()[2].opcode == Opcode::Store);
+  REQUIRE(program.instructions()[2].buffer_element_count == 1);
 }
 
 // -----------------------------------------------------------------------------
@@ -486,6 +488,7 @@ TEST_CASE("runtime Program stores complete execution metadata independently") {
       .opcode = Opcode::Load,
       .scalar_dst = ScalarId{0},
       .buffer = SlotId{0},
+      .buffer_element_count = 6,
       .offset =
           IndexOperand{.kind = IndexOperand::Kind::Constant, .constant = 0},
   };
@@ -506,6 +509,7 @@ TEST_CASE("runtime Program stores complete execution metadata independently") {
   REQUIRE(program.index_count() == 3);
 
   REQUIRE(program.instructions()[0].opcode == Opcode::Load);
+  REQUIRE(program.instructions()[0].buffer_element_count == 6);
   REQUIRE(program.inputs()[0].slot_id == SlotId{0});
   REQUIRE(program.inputs()[0].value_id == ValueId{10});
   REQUIRE(program.get_slotid_from_valueid(ValueId{10}) == SlotId{0});
@@ -518,6 +522,48 @@ TEST_CASE("runtime Program stores complete execution metadata independently") {
   REQUIRE(program.get_slot_metadata(SlotId{0}).capacity == 24);
   REQUIRE(program.get_slot_metadata(SlotId{1}).capacity == 64);
   REQUIRE(program.get_slot_metadata(SlotId{1}).alignment == 32);
+}
+
+TEST_CASE(
+    "runtime Program preserves logical memory-access extent independently "
+    "of physical slot capacity") {
+  const Instruction load{
+      .opcode = Opcode::Load,
+      .scalar_dst = ScalarId{0},
+      .buffer = SlotId{0},
+      .buffer_element_count = 2,
+      .offset =
+          IndexOperand{.kind = IndexOperand::Kind::Constant, .constant = 0},
+  };
+
+  const Instruction store{
+      .opcode = Opcode::Store,
+      .scalar_lhs = ScalarId{0},
+      .buffer = SlotId{1},
+      .buffer_element_count = 2,
+      .offset =
+          IndexOperand{.kind = IndexOperand::Kind::Constant, .constant = 0},
+  };
+
+  // Both physical slots are deliberately much larger than the logical
+  // buffers addressed by the instructions.
+  const Program program{{load, store},
+                        {input(ValueId{10}, SlotId{0}, Shape{2})},
+                        {output(SlotId{1}, Shape{2})},
+                        {slot(64), slot(64)},
+                        1,
+                        0};
+
+  REQUIRE(program.instructions().size() == 2);
+
+  REQUIRE(program.instructions()[0].opcode == Opcode::Load);
+  REQUIRE(program.instructions()[0].buffer_element_count == 2);
+
+  REQUIRE(program.instructions()[1].opcode == Opcode::Store);
+  REQUIRE(program.instructions()[1].buffer_element_count == 2);
+
+  REQUIRE(program.get_slot_metadata(SlotId{0}).capacity == 64);
+  REQUIRE(program.get_slot_metadata(SlotId{1}).capacity == 64);
 }
 
 // -----------------------------------------------------------------------------

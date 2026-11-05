@@ -134,11 +134,10 @@ std::vector<Tensor> VM::run(const runtime::Program &rt_program,
       }
       const auto offset =
           resolve_index_operand_value(rt_instruc.offset, indices);
-      const auto &storage = get_slot_storage(slots, rt_instruc.buffer);
-      if (offset * sizeof(float) >= storage.bytes.size()) {
-        throw std::logic_error(
-            "given runtime tensor load offset is out of range");
+      if (offset >= rt_instruc.buffer_element_count) {
+        throw std::out_of_range("memory access outside logical bounds");
       }
+      const auto &storage = get_slot_storage(slots, rt_instruc.buffer);
       scalars[rt_instruc.scalar_dst.value] = storage.load_f32(offset);
       pc++;
       break;
@@ -153,11 +152,10 @@ std::vector<Tensor> VM::run(const runtime::Program &rt_program,
       }
       const auto offset =
           resolve_index_operand_value(rt_instruc.offset, indices);
-      auto &storage = get_slot_storage(slots, rt_instruc.buffer);
-      if (offset * sizeof(float) >= storage.bytes.size()) {
-        throw std::logic_error(
-            "given runtime scalar value offset is greater than storage length");
+      if (offset >= rt_instruc.buffer_element_count) {
+        throw std::out_of_range("memory access outside logical bounds");
       }
+      auto &storage = get_slot_storage(slots, rt_instruc.buffer);
       storage.store_f32(offset, scalars[rt_instruc.scalar_lhs.value]);
       pc++;
       break;

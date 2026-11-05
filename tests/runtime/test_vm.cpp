@@ -113,6 +113,28 @@ Program make_program(std::vector<Instruction> instructions,
     };
   }
 
+  // Runtime Load/Store instructions now carry the logical element count of
+  // the buffer they access. Most VM unit tests construct instructions by hand,
+  // so infer that logical extent from the SlotSpec unless the test explicitly
+  // provided a non-zero value itself.
+  for (auto &instruction : instructions) {
+    if (instruction.opcode != Opcode::Load &&
+        instruction.opcode != Opcode::Store) {
+      continue;
+    }
+
+    if (instruction.buffer_element_count != 0) {
+      continue;
+    }
+
+    const auto *spec = find_slot_spec(slots, instruction.buffer);
+    if (spec == nullptr) {
+      continue;
+    }
+
+    instruction.buffer_element_count = spec->shape.num_elements();
+  }
+
   return Program(std::move(instructions), std::move(inputs),
                  std::move(output_infos), std::move(slot_metadata),
                  scalar_count, index_count);

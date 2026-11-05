@@ -129,17 +129,16 @@ MemoryPlan MemoryPlanner::plan(const Schedule &schedule,
     // -----------------------------------------------------------------------------
     // search from free slots if any slot matches capacity,alignment
     // ------------------------------------------------------------------------------
+    std::size_t smallest_capacity = SIZE_MAX;
     for (std::size_t j = 0; j < free_slots.size(); j++) {
       const auto &id = free_slots[j];
       const auto &slot = slots[id.value];
       if (slot.capacity_bytes >= req_capacity &&
-          slot.alignment >= req_alignment) {
+          slot.alignment >= req_alignment &&
+          slot.capacity_bytes < smallest_capacity) {
         // assign buffer to slot
-        buffer_to_slot[lt.buffer_id.value] = id;
-        active_slots.push_back(ActiveSlot{id, lt.last_use_kernel.value()});
-        free_slots.erase(free_slots.begin() + j);
         chosen_slot = id;
-        break;
+        smallest_capacity = slot.capacity_bytes;
       }
       const auto cost =
           std::max(slot.capacity_bytes, req_capacity) - slot.capacity_bytes;
@@ -154,7 +153,13 @@ MemoryPlan MemoryPlanner::plan(const Schedule &schedule,
     // if a slot is available adjust its capacity, if not create a new slot, and
     // then assign it
     // ------------------------------------------------------------------------------
-    if (!chosen_slot.has_value()) {
+    if (chosen_slot.has_value()) {
+      free_slots.erase(
+          std::find(free_slots.begin(), free_slots.end(), *chosen_slot));
+      buffer_to_slot[lt.buffer_id.value] = *chosen_slot;
+      active_slots.push_back(
+          ActiveSlot{*chosen_slot, lt.last_use_kernel.value()});
+    } else {
       if (candidate_id.has_value()) {
         storage_slot.capacity_bytes =
             std::max(req_capacity, slots[candidate_id->value].capacity_bytes);

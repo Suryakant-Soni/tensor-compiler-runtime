@@ -14,6 +14,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <vector>
 
 using tcr::compiler::ProgramEmitter;
@@ -412,6 +413,8 @@ TEST_CASE("ProgramEmitter translates LIR Load with register offset") {
 
   REQUIRE(instruction.buffer == runtime::SlotId{buffer.value});
 
+  REQUIRE(instruction.buffer_element_count == 4);
+
   REQUIRE(instruction.offset.kind == runtime::IndexOperand::Kind::Register);
 
   REQUIRE(instruction.offset.reg.value == index.value);
@@ -430,6 +433,8 @@ TEST_CASE("ProgramEmitter translates LIR Load with constant offset") {
   const auto rt_program = emit_with_unique_slots(lir_program);
 
   const auto &instruction = rt_program.instructions()[0];
+
+  REQUIRE(instruction.buffer_element_count == 8);
 
   REQUIRE(instruction.offset.kind == runtime::IndexOperand::Kind::Constant);
 
@@ -464,6 +469,8 @@ TEST_CASE("ProgramEmitter translates LIR Store with register offset") {
 
   REQUIRE(instruction.buffer == runtime::SlotId{buffer.value});
 
+  REQUIRE(instruction.buffer_element_count == 4);
+
   REQUIRE(instruction.offset.kind == runtime::IndexOperand::Kind::Register);
 
   REQUIRE(instruction.offset.reg.value == index.value);
@@ -484,9 +491,62 @@ TEST_CASE("ProgramEmitter translates LIR Store with constant offset") {
 
   const auto &instruction = rt_program.instructions()[0];
 
+  REQUIRE(instruction.buffer_element_count == 4);
+
   REQUIRE(instruction.offset.kind == runtime::IndexOperand::Kind::Constant);
 
   REQUIRE(instruction.offset.constant == 3);
+}
+
+TEST_CASE(
+    "ProgramEmitter memory access extent follows logical buffer shape, not "
+    "physical slot capacity") {
+  lir::Program lir_program;
+
+  const auto input = lir_program.create_buffer(Shape{2}, Dtype::F32);
+  const auto output = lir_program.create_buffer(Shape{2}, Dtype::F32);
+
+  lir_program.add_input(ValueId{0}, input);
+  lir_program.add_output(output);
+
+  const auto scalar = lir_program.create_scalar();
+
+  lir_program.add_instruction(lir::Load(scalar, input, lir::ConstantIndex{0}));
+  lir_program.add_instruction(
+      lir::Store(scalar, output, lir::ConstantIndex{0}));
+
+  tcr::compiler::MemoryPlan plan;
+  plan.buffer_to_slot.resize(lir_program.buffer_count());
+
+  // Input storage is external, so it has no planner slot.
+  plan.buffer_to_slot[input.value] = std::nullopt;
+
+  // Deliberately give the output a much larger physical slot than its
+  // logical Shape{2}. Runtime memory access bounds must still be 2 elements.
+  plan.slots.push_back(tcr::compiler::StorageSlot{
+      16 * sizeof(float),
+      alignof(std::max_align_t),
+  });
+  plan.buffer_to_slot[output.value] = runtime::SlotId{0};
+
+  ProgramEmitter emitter;
+  const auto rt_program = emitter.emit(lir_program, plan);
+
+  REQUIRE(rt_program.instructions().size() == 2);
+
+  const auto &load = rt_program.instructions()[0];
+  const auto &store = rt_program.instructions()[1];
+
+  REQUIRE(load.opcode == runtime::Opcode::Load);
+  REQUIRE(load.buffer_element_count == 2);
+
+  REQUIRE(store.opcode == runtime::Opcode::Store);
+  REQUIRE(store.buffer_element_count == 2);
+
+  // Input occupies runtime slot 0. Planner slot 0 becomes runtime slot 1.
+  REQUIRE(store.buffer == runtime::SlotId{1});
+  REQUIRE(rt_program.get_slot_metadata(runtime::SlotId{1}).capacity ==
+          16 * sizeof(float));
 }
 
 // -----------------------------------------------------------------------------
@@ -1159,7 +1219,11 @@ TEST_CASE(
 
   REQUIRE(rt_program.instructions()[1].buffer == runtime::SlotId{0});
 
+  REQUIRE(rt_program.instructions()[1].buffer_element_count == 3);
+
   REQUIRE(rt_program.instructions()[2].buffer == runtime::SlotId{1});
+
+  REQUIRE(rt_program.instructions()[2].buffer_element_count == 3);
 
   REQUIRE(rt_program.instructions()[0].jump == 4);
 
