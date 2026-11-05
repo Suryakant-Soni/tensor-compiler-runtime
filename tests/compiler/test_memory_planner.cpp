@@ -71,8 +71,7 @@ LinearFixture make_three_kernel_chain(Shape first_shape = Shape{4},
 
 } // namespace
 
-TEST_CASE(
-    "MemoryPlanner leaves external graph inputs without planner-owned slots") {
+TEST_CASE("MemoryPlanner leaves external graph inputs without planner-owned slots") {
   const auto f = make_three_kernel_chain();
 
   const auto plan = MemoryPlanner{}.plan(f.schedule, f.lowered);
@@ -95,8 +94,7 @@ TEST_CASE("MemoryPlanner reuses a slot after a non-overlapping lifetime") {
   REQUIRE(plan.buffer_to_slot[f.third_buffer.value] == runtime::SlotId{0});
 }
 
-TEST_CASE("MemoryPlanner does not reuse storage when last use equals new birth "
-          "kernel") {
+TEST_CASE("MemoryPlanner does not reuse storage when last use equals new birth kernel") {
   LoweringResult lowered;
   const ValueId input{0};
   const ValueId first{1};
@@ -104,8 +102,7 @@ TEST_CASE("MemoryPlanner does not reuse storage when last use equals new birth "
 
   const auto input_buffer = lowered.program.create_buffer(Shape{4}, Dtype::F32);
   const auto first_buffer = lowered.program.create_buffer(Shape{4}, Dtype::F32);
-  const auto output_buffer =
-      lowered.program.create_buffer(Shape{4}, Dtype::F32);
+  const auto output_buffer = lowered.program.create_buffer(Shape{4}, Dtype::F32);
 
   lowered.program.add_input(input, input_buffer);
   lowered.program.add_output(output_buffer);
@@ -138,8 +135,7 @@ TEST_CASE("MemoryPlanner keeps graph outputs live through program completion") {
           plan.buffer_to_slot[f.third_buffer.value]);
 }
 
-TEST_CASE("MemoryPlanner grows a reused physical slot to the largest assigned "
-          "buffer") {
+TEST_CASE("MemoryPlanner grows a reused physical slot to the largest assigned buffer") {
   const auto f = make_three_kernel_chain(Shape{1}, Shape{1}, Shape{8});
 
   const auto plan = MemoryPlanner{}.plan(f.schedule, f.lowered);
@@ -150,8 +146,7 @@ TEST_CASE("MemoryPlanner grows a reused physical slot to the largest assigned "
   REQUIRE(plan.slots[0].alignment >= alignof(std::max_align_t));
 }
 
-TEST_CASE("MemoryPlanner assigns deterministic distinct slots to outputs born "
-          "in same kernel") {
+TEST_CASE("MemoryPlanner assigns deterministic distinct slots to outputs born in same kernel") {
   LoweringResult lowered;
   const ValueId input{0};
   const ValueId a{1};
@@ -179,8 +174,7 @@ TEST_CASE("MemoryPlanner assigns deterministic distinct slots to outputs born "
   REQUIRE(plan.buffer_to_slot[b_buffer.value] == runtime::SlotId{1});
 }
 
-TEST_CASE(
-    "MemoryPlanner rejects planner-owned buffer without complete lifetime") {
+TEST_CASE("MemoryPlanner rejects planner-owned buffer without complete lifetime") {
   LoweringResult lowered;
   const ValueId input{0};
   const ValueId dead{1};
