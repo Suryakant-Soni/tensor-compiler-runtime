@@ -111,7 +111,7 @@ graph object
         Output Tensor(s)
 ```
 
-## Phase 6 Memory Planner — Measured Allocation Reduction
+## Memory Planner — Measured Allocation Reduction
 
 The memory planner now has a direct regression test comparing naive logical-buffer allocation with lifetime-based physical-slot reuse.
 
