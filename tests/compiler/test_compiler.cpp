@@ -4,19 +4,22 @@
 #include "tcr/ir/dtype.hpp"
 #include "tcr/ir/graph.hpp"
 #include "tcr/ir/shape.hpp"
+#include "tcr/runtime/instruction.hpp"
 #include "tcr/runtime/opcode.hpp"
 #include "tcr/runtime/program.hpp"
 #include "tcr/runtime/slot_id.hpp"
 
-#include <algorithm>
 #include <cstddef>
 #include <stdexcept>
 #include <vector>
 
 using tcr::compiler::Compiler;
+
 using tcr::ir::Dtype;
 using tcr::ir::Graph;
 using tcr::ir::Shape;
+
+using tcr::runtime::IndexOperand;
 using tcr::runtime::Opcode;
 using tcr::runtime::SlotId;
 
@@ -63,37 +66,61 @@ logical_tensor_info_by_slot(const tcr::runtime::Program &program,
 
 } // namespace
 
+// =============================================================================
+// Empty / unreachable graph
+// =============================================================================
+
 TEST_CASE("Compiler compiles empty graph to empty runtime program") {
   Graph graph;
 
-  const auto program = Compiler{}.compile(graph);
+  Compiler compiler;
+  const auto program = compiler.compile(graph);
 
   REQUIRE(program.instructions().empty());
   REQUIRE(program.inputs().empty());
   REQUIRE(program.outputs().empty());
+
   REQUIRE(program.slots_count() == 0);
   REQUIRE(program.scalar_count() == 0);
   REQUIRE(program.index_count() == 0);
 }
 
-TEST_CASE("Compiler excludes graph input when graph has no reachable output") {
+TEST_CASE("Compiler does not compile graph inputs when graph has no outputs") {
   Graph graph;
-  graph.input(Shape{4}, Dtype::F32);
 
-  const auto program = Compiler{}.compile(graph);
+  graph.input(Shape{2}, Dtype::F32);
 
+  graph.input(Shape{3}, Dtype::F32);
+
+  Compiler compiler;
+  const auto program = compiler.compile(graph);
+
+  // Scheduling starts from graph outputs.
+  // Nothing is reachable when there are no outputs.
   REQUIRE(program.inputs().empty());
   REQUIRE(program.outputs().empty());
+  REQUIRE(program.instructions().empty());
+
   REQUIRE(program.slots_count() == 0);
+  REQUIRE(program.scalar_count() == 0);
+  REQUIRE(program.index_count() == 0);
 }
 
-TEST_CASE(
-    "Compiler can return graph input directly without planner-owned slot") {
+// =============================================================================
+// Input directly as output
+// =============================================================================
+
+TEST_CASE("Compiler compiles graph input directly as runtime output") {
   Graph graph;
+
   const auto x = graph.input(Shape{3}, Dtype::F32);
+
   graph.set_outputs({x});
 
-  const auto program = Compiler{}.compile(graph);
+  Compiler compiler;
+  const auto program = compiler.compile(graph);
+
+  REQUIRE(program.instructions().empty());
 
   REQUIRE(program.inputs().size() == 1);
   REQUIRE(program.outputs().size() == 1);
@@ -114,7 +141,7 @@ TEST_CASE(
   REQUIRE(info.dtype == Dtype::F32);
 }
 
-TEST_CASE("Compiler preserves direct input output ordering") {
+TEST_CASE("Compiler preserves scalar input metadata") {
   Graph graph;
 
   const auto x = graph.input(Shape{}, Dtype::F32);
@@ -154,7 +181,15 @@ TEST_CASE("Compiler preserves requested output ordering for direct inputs") {
 
   const auto x = graph.input(Shape{2}, Dtype::F32);
 
-  const auto program = Compiler{}.compile(graph);
+  const auto y = graph.input(Shape{4}, Dtype::F32);
+
+  graph.set_outputs({
+      y,
+      x,
+  });
+
+  Compiler compiler;
+  const auto program = compiler.compile(graph);
 
   REQUIRE(program.inputs().size() == 2);
   REQUIRE(program.outputs().size() == 2);
@@ -183,17 +218,28 @@ TEST_CASE("Compiler preserves requested output ordering for direct inputs") {
 
 TEST_CASE("Compiler compiles Add into flat elementwise runtime loop") {
   Graph graph;
+
   const auto x = graph.input(Shape{4}, Dtype::F32);
+
   const auto y = graph.input(Shape{4}, Dtype::F32);
+
   const auto out = graph.add(x, y);
+
   graph.set_outputs({out});
 
-  const auto program = Compiler{}.compile(graph);
+  Compiler compiler;
+  const auto program = compiler.compile(graph);
 
   REQUIRE(program.inputs().size() == 2);
   REQUIRE(program.outputs().size() == 1);
+
   REQUIRE(program.slots_count() == 3);
+  REQUIRE(program.scalar_count() == 3);
+  REQUIRE(program.index_count() == 1);
+
+  REQUIRE(program.inputs()[0].value_id == x);
   REQUIRE(program.inputs()[0].slot_id == SlotId{0});
+  REQUIRE(program.inputs()[1].value_id == y);
   REQUIRE(program.inputs()[1].slot_id == SlotId{1});
 
   REQUIRE(program.get_slotid_from_valueid(x) == SlotId{0});
@@ -224,33 +270,85 @@ TEST_CASE("Compiler compiles Add into flat elementwise runtime loop") {
   REQUIRE(program.instructions()[5].opcode == Opcode::LoopEnd);
 }
 
-TEST_CASE("Compiler emits flat elementwise Add loop") {
+TEST_CASE("Compiler Add loop uses correct bounds and jumps") {
   Graph graph;
+
   const auto x = graph.input(Shape{4}, Dtype::F32);
+
   const auto y = graph.input(Shape{4}, Dtype::F32);
+
   const auto out = graph.add(x, y);
+
   graph.set_outputs({out});
 
-  const auto program = Compiler{}.compile(graph);
-  const auto ops = opcodes(program);
+  Compiler compiler;
+  const auto program = compiler.compile(graph);
 
-  REQUIRE(ops.size() == 6);
-  REQUIRE(ops[0] == Opcode::LoopBegin);
-  REQUIRE(ops[1] == Opcode::Load);
-  REQUIRE(ops[2] == Opcode::Load);
-  REQUIRE(ops[3] == Opcode::Add);
-  REQUIRE(ops[4] == Opcode::Store);
-  REQUIRE(ops[5] == Opcode::LoopEnd);
-  REQUIRE(program.instructions()[0].jump == 6);
-  REQUIRE(program.instructions()[5].jump == 1);
-  REQUIRE(program.instructions()[1].buffer == SlotId{0});
-  REQUIRE(program.instructions()[2].buffer == SlotId{1});
-  REQUIRE(program.instructions()[4].buffer == SlotId{2});
+  const auto &begin = program.instructions()[0];
+
+  const auto &end = program.instructions()[5];
+
+  REQUIRE(begin.loop_index.value == 0);
+
+  require_constant_operand(begin.loop_begin, 0);
+
+  require_constant_operand(begin.loop_end, 4);
+
+  // Skip entire loop.
+  REQUIRE(begin.jump == 6);
+
+  REQUIRE(end.loop_index.value == 0);
+
+  require_constant_operand(end.loop_end, 4);
+
+  // Repeat from first instruction in body.
+  REQUIRE(end.jump == 1);
 }
 
-TEST_CASE("Compiler Mul emits Mul arithmetic and preserves output metadata") {
+TEST_CASE("Compiler Add connects runtime scalar registers correctly") {
   Graph graph;
+
+  const auto x = graph.input(Shape{2}, Dtype::F32);
+
+  const auto y = graph.input(Shape{2}, Dtype::F32);
+
+  const auto out = graph.add(x, y);
+
+  graph.set_outputs({out});
+
+  Compiler compiler;
+  const auto program = compiler.compile(graph);
+
+  const auto &load_a = program.instructions()[1];
+
+  const auto &load_b = program.instructions()[2];
+
+  const auto &add = program.instructions()[3];
+
+  const auto &store = program.instructions()[4];
+
+  REQUIRE(load_a.scalar_dst.value == 0);
+  REQUIRE(load_a.buffer == SlotId{0});
+  require_register_operand(load_a.offset, 0);
+
+  REQUIRE(load_b.scalar_dst.value == 1);
+  REQUIRE(load_b.buffer == SlotId{1});
+  require_register_operand(load_b.offset, 0);
+
+  REQUIRE(add.scalar_lhs.value == 0);
+  REQUIRE(add.scalar_rhs.value == 1);
+  REQUIRE(add.scalar_dst.value == 2);
+
+  REQUIRE(store.scalar_lhs.value == 2);
+  REQUIRE(store.buffer == SlotId{2});
+  require_register_operand(store.offset, 0);
+}
+
+TEST_CASE("Compiler Add preserves output tensor metadata") {
+  Graph graph;
+
   const auto x = graph.input(Shape{2, 3}, Dtype::F32);
+
   const auto y = graph.input(Shape{2, 3}, Dtype::F32);
 
   const auto out = graph.add(x, y);
@@ -281,9 +379,11 @@ TEST_CASE("Compiler compiles Mul into flat elementwise runtime loop") {
   const auto y = graph.input(Shape{3}, Dtype::F32);
 
   const auto out = graph.mul(x, y);
+
   graph.set_outputs({out});
 
-  const auto program = Compiler{}.compile(graph);
+  Compiler compiler;
+  const auto program = compiler.compile(graph);
 
   REQUIRE(program.slots_count() == 3);
   REQUIRE(program.scalar_count() == 3);
@@ -306,28 +406,89 @@ TEST_CASE("Compiler compiles Mul into flat elementwise runtime loop") {
   REQUIRE(program.outputs()[0].slot_id == SlotId{2});
 }
 
-TEST_CASE("Compiler Sum produces scalar logical output") {
+TEST_CASE("Compiler distinguishes Add and Mul runtime arithmetic") {
+  SECTION("Add") {
+    Graph graph;
+
+    const auto x = graph.input(Shape{2}, Dtype::F32);
+
+    const auto y = graph.input(Shape{2}, Dtype::F32);
+
+    const auto out = graph.add(x, y);
+
+    graph.set_outputs({out});
+
+    Compiler compiler;
+    const auto program = compiler.compile(graph);
+
+    REQUIRE(program.instructions()[3].opcode == Opcode::Add);
+  }
+
+  SECTION("Mul") {
+    Graph graph;
+
+    const auto x = graph.input(Shape{2}, Dtype::F32);
+
+    const auto y = graph.input(Shape{2}, Dtype::F32);
+
+    const auto out = graph.mul(x, y);
+
+    graph.set_outputs({out});
+
+    Compiler compiler;
+    const auto program = compiler.compile(graph);
+
+    REQUIRE(program.instructions()[3].opcode == Opcode::Mul);
+  }
+}
+
+// =============================================================================
+// SUM
+// =============================================================================
+
+TEST_CASE("Compiler compiles Sum into initialization loop and store") {
   Graph graph;
-  const auto x = graph.input(Shape{5}, Dtype::F32);
+
+  const auto x = graph.input(Shape{4}, Dtype::F32);
+
   const auto out = graph.sum(x);
+
   graph.set_outputs({out});
 
-  const auto program = Compiler{}.compile(graph);
+  Compiler compiler;
+  const auto program = compiler.compile(graph);
 
   REQUIRE(program.inputs().size() == 1);
   REQUIRE(program.outputs().size() == 1);
+
   REQUIRE(program.slots_count() == 2);
-  REQUIRE(program.outputs()[0].shape == Shape{});
-  REQUIRE(program.outputs()[0].dtype == Dtype::F32);
-  REQUIRE(program.get_slot_metadata(program.outputs()[0].slot_id).capacity ==
-          sizeof(float));
-  REQUIRE(count_opcode(program, Opcode::Constant) == 1);
-  REQUIRE(count_opcode(program, Opcode::Add) == 1);
-  REQUIRE(count_opcode(program, Opcode::Store) == 1);
+  REQUIRE(program.scalar_count() == 2);
+  REQUIRE(program.index_count() == 1);
+
+  /*
+   * 0 Constant acc = 0
+   * 1 LoopBegin
+   * 2 Load
+   * 3 Add
+   * 4 LoopEnd
+   * 5 Store
+   */
+  REQUIRE(program.instructions().size() == 6);
+
+  REQUIRE(program.instructions()[0].opcode == Opcode::Constant);
+
+  REQUIRE(program.instructions()[1].opcode == Opcode::LoopBegin);
+
+  REQUIRE(program.instructions()[2].opcode == Opcode::Load);
+
+  REQUIRE(program.instructions()[3].opcode == Opcode::Add);
+
+  REQUIRE(program.instructions()[4].opcode == Opcode::LoopEnd);
+
+  REQUIRE(program.instructions()[5].opcode == Opcode::Store);
 }
 
-TEST_CASE("Compiler groups elementwise Add before Sum without materializing "
-          "Add tensor") {
+TEST_CASE("Compiler Sum initializes accumulator to zero") {
   Graph graph;
 
   const auto x = graph.input(Shape{3}, Dtype::F32);
@@ -406,12 +567,18 @@ TEST_CASE("Compiler groups Add before Sum without materializing Add output") {
 
   const auto x = graph.input(Shape{4}, Dtype::F32);
   const auto y = graph.input(Shape{4}, Dtype::F32);
+
   const auto added = graph.add(x, y);
   const auto out = graph.sum(added);
+
   graph.set_outputs({out});
 
-  const auto program = Compiler{}.compile(graph);
+  Compiler compiler;
+  const auto program = compiler.compile(graph);
 
+  // x, y and the scalar reduction output are materialized.
+  // There is no full Shape{4} buffer for `added`.
+  REQUIRE(program.slots_count() == 3);
   REQUIRE(program.inputs().size() == 2);
   REQUIRE(program.outputs().size() == 1);
 
@@ -484,8 +651,8 @@ TEST_CASE("Compiler groups Mul before Sum without materializing Mul output") {
   REQUIRE(program.instructions()[7].buffer == out_slot);
 }
 
-TEST_CASE("Compiler MatMul keeps logical matrix output metadata outside "
-          "physical slot") {
+TEST_CASE("Compiler groups fused elementwise expression before Sum without "
+          "intermediate tensor") {
   Graph graph;
 
   const auto x = graph.input(Shape{4}, Dtype::F32);
@@ -544,14 +711,19 @@ TEST_CASE("Compiler compiles MatMul into nested flat runtime loops") {
   Graph graph;
 
   const auto a = graph.input(Shape{2, 3}, Dtype::F32);
+
   const auto b = graph.input(Shape{3, 4}, Dtype::F32);
+
   const auto out = graph.matmul(a, b);
+
   graph.set_outputs({out});
 
-  const auto program = Compiler{}.compile(graph);
+  Compiler compiler;
+  const auto program = compiler.compile(graph);
 
   REQUIRE(program.inputs().size() == 2);
   REQUIRE(program.outputs().size() == 1);
+
   REQUIRE(program.slots_count() == 3);
 
   // i,j,k + six arithmetic index registers.
@@ -937,15 +1109,26 @@ TEST_CASE(
   REQUIRE(program.instructions()[15].opcode == Opcode::LoopEnd);
 }
 
+// =============================================================================
+// Multiple graph outputs
+// =============================================================================
+
 TEST_CASE("Compiler preserves multiple computed output ordering") {
   Graph graph;
+
   const auto x = graph.input(Shape{2}, Dtype::F32);
   const auto y = graph.input(Shape{2}, Dtype::F32);
-  const auto added = graph.add(x, y);
-  const auto multiplied = graph.mul(x, y);
-  graph.set_outputs({multiplied, added});
 
-  const auto program = Compiler{}.compile(graph);
+  const auto add_result = graph.add(x, y);
+  const auto mul_result = graph.mul(x, y);
+
+  graph.set_outputs({
+      mul_result,
+      add_result,
+  });
+
+  Compiler compiler;
+  const auto program = compiler.compile(graph);
 
   REQUIRE(program.outputs().size() == 2);
   REQUIRE(program.instructions().size() == 12);
@@ -974,14 +1157,27 @@ TEST_CASE("Compiler preserves multiple computed output ordering") {
               .shape == Shape{2});
 }
 
-TEST_CASE("Compiler duplicate graph output reuses same runtime slot") {
+TEST_CASE("Compiler reuses same runtime slot for duplicate graph output") {
   Graph graph;
-  const auto x = graph.input(Shape{2}, Dtype::F32);
-  const auto y = graph.input(Shape{2}, Dtype::F32);
-  const auto out = graph.add(x, y);
-  graph.set_outputs({out, out});
 
-  const auto program = Compiler{}.compile(graph);
+  const auto x = graph.input(Shape{2}, Dtype::F32);
+
+  const auto y = graph.input(Shape{2}, Dtype::F32);
+
+  const auto out = graph.add(x, y);
+
+  graph.set_outputs({
+      out,
+      out,
+  });
+
+  Compiler compiler;
+  const auto program = compiler.compile(graph);
+
+  REQUIRE(program.slots_count() == 3);
+
+  // Node is lowered only once.
+  REQUIRE(program.instructions().size() == 6);
 
   REQUIRE(program.outputs().size() == 2);
 
@@ -989,15 +1185,22 @@ TEST_CASE("Compiler duplicate graph output reuses same runtime slot") {
   REQUIRE(program.outputs()[1].slot_id == SlotId{2});
 }
 
-TEST_CASE(
-    "Compiler supports direct input and computed value together as outputs") {
+TEST_CASE("Compiler supports input and computed value together as outputs") {
   Graph graph;
-  const auto x = graph.input(Shape{3}, Dtype::F32);
-  const auto y = graph.input(Shape{3}, Dtype::F32);
-  const auto out = graph.add(x, y);
-  graph.set_outputs({x, out});
 
-  const auto program = Compiler{}.compile(graph);
+  const auto x = graph.input(Shape{2}, Dtype::F32);
+
+  const auto y = graph.input(Shape{2}, Dtype::F32);
+
+  const auto out = graph.add(x, y);
+
+  graph.set_outputs({
+      x,
+      out,
+  });
+
+  Compiler compiler;
+  const auto program = compiler.compile(graph);
 
   REQUIRE(program.outputs().size() == 2);
   REQUIRE(program.inputs().size() == 2);
@@ -1015,7 +1218,9 @@ TEST_CASE(
 
 TEST_CASE("Compiler excludes unreachable computed operation") {
   Graph graph;
+
   const auto x = graph.input(Shape{2}, Dtype::F32);
+
   const auto y = graph.input(Shape{2}, Dtype::F32);
 
   const auto live = graph.add(x, y);
@@ -1048,21 +1253,55 @@ TEST_CASE("Compiler excludes unreachable input and dependency subtree") {
   const auto y = graph.input(Shape{2}, Dtype::F32);
 
   const auto z = graph.input(Shape{2}, Dtype::F32);
-  graph.set_outputs({z});
 
-  const auto program = Compiler{}.compile(graph);
+  const auto live = graph.add(x, y);
 
-  REQUIRE(program.inputs().size() == 1);
-  REQUIRE(program.outputs().size() == 1);
-  REQUIRE(program.slots_count() == 1);
-  REQUIRE(program.instructions().empty());
+  const auto dead_a = graph.mul(y, z);
+
+  const auto dead_b = graph.add(dead_a, z);
+
+  (void)dead_b;
+
+  graph.set_outputs({live});
+
+  Compiler compiler;
+  const auto program = compiler.compile(graph);
+
+  // z belongs only to the unreachable subtree and must not reach runtime.
+  REQUIRE(program.inputs().size() == 2);
+
+  REQUIRE(program.inputs()[0].value_id == x);
+  REQUIRE(program.inputs()[0].slot_id == SlotId{0});
+  REQUIRE(program.inputs()[1].value_id == y);
+  REQUIRE(program.inputs()[1].slot_id == SlotId{1});
+
+  REQUIRE(program.get_slotid_from_valueid(x) == SlotId{0});
+  REQUIRE(program.get_slotid_from_valueid(y) == SlotId{1});
+
+  REQUIRE(program.slots_count() == 3);
+
+  REQUIRE(program.instructions().size() == 6);
+
+  REQUIRE(program.instructions()[3].opcode == Opcode::Add);
 }
 
-TEST_CASE("Compiler physical slot metadata is capacity and alignment only") {
+// =============================================================================
+// MatMul result consumed by another operation
+// =============================================================================
+
+TEST_CASE("Compiler propagates MatMul result metadata into dependent Add") {
   Graph graph;
-  const auto x = graph.input(Shape{2, 3}, Dtype::F32);
-  const auto y = graph.input(Shape{2, 3}, Dtype::F32);
-  const auto out = graph.add(x, y);
+
+  const auto lhs = graph.input(Shape{2, 3}, Dtype::F32);
+
+  const auto rhs = graph.input(Shape{3, 4}, Dtype::F32);
+
+  const auto bias = graph.input(Shape{2, 4}, Dtype::F32);
+
+  const auto matmul = graph.matmul(lhs, rhs);
+
+  const auto out = graph.add(matmul, bias);
+
   graph.set_outputs({out});
 
   Compiler compiler;

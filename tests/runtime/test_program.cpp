@@ -1,7 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "tcr/ir/dtype.hpp"
-#include "tcr/ir/ids.hpp"
 #include "tcr/ir/shape.hpp"
 #include "tcr/runtime/instruction.hpp"
 #include "tcr/runtime/opcode.hpp"
@@ -21,8 +20,8 @@ using tcr::runtime::InputInfo;
 using tcr::runtime::Instruction;
 using tcr::runtime::Opcode;
 using tcr::runtime::OutputInfo;
-using tcr::runtime::OutputInfo;
 using tcr::runtime::Program;
+using tcr::runtime::ScalarId;
 using tcr::runtime::SlotId;
 using tcr::runtime::SlotMetadata;
 
@@ -56,6 +55,7 @@ TEST_CASE("runtime Program default constructor creates empty program") {
   REQUIRE(program.instructions().empty());
   REQUIRE(program.inputs().empty());
   REQUIRE(program.outputs().empty());
+
   REQUIRE(program.slots_count() == 0);
   REQUIRE(program.scalar_count() == 0);
   REQUIRE(program.index_count() == 0);
@@ -153,7 +153,8 @@ TEST_CASE("runtime Program stores input slots") {
                         0,
                         0};
 
-  REQUIRE(program.inputs().size() == 2);
+  REQUIRE(program.inputs().size() == 3);
+
   REQUIRE(program.inputs()[0].value_id == ValueId{10});
   REQUIRE(program.inputs()[0].slot_id == SlotId{0});
   REQUIRE(program.inputs()[0].shape == Shape{1});
@@ -212,6 +213,10 @@ TEST_CASE("runtime Program supports no inputs") {
   REQUIRE(program.outputs().size() == 1);
   REQUIRE(program.outputs()[0].slot_id == SlotId{0});
 }
+
+// -----------------------------------------------------------------------------
+// Outputs
+// -----------------------------------------------------------------------------
 
 TEST_CASE("runtime Program stores output slots") {
   const Program program{{},
@@ -283,6 +288,10 @@ TEST_CASE("runtime Program supports multiple inputs and outputs") {
   REQUIRE(program.outputs()[0].slot_id == SlotId{3});
   REQUIRE(program.outputs()[1].slot_id == SlotId{4});
 }
+
+// -----------------------------------------------------------------------------
+// Scalar and index register counts
+// -----------------------------------------------------------------------------
 
 TEST_CASE("runtime Program stores scalar count") {
   const Program program{{}, {}, {}, {}, 7, 0};
@@ -368,6 +377,10 @@ TEST_CASE("runtime Program preserves instruction execution order") {
   REQUIRE(program.instructions()[2].opcode == Opcode::Store);
 }
 
+// -----------------------------------------------------------------------------
+// add_instruction()
+// -----------------------------------------------------------------------------
+
 TEST_CASE("runtime Program add_instruction appends instruction") {
   Program program;
 
@@ -437,6 +450,10 @@ TEST_CASE("runtime Program mutable instructions accessor allows appending "
   REQUIRE(program.instructions().size() == 1);
   REQUIRE(program.instructions()[0].constant == 7.0F);
 }
+
+// -----------------------------------------------------------------------------
+// Const accessors
+// -----------------------------------------------------------------------------
 
 TEST_CASE("runtime Program accessors work through const Program reference") {
   Program program{{Instruction{.opcode = Opcode::Constant,
